@@ -1,22 +1,27 @@
+import {
+  SEARCH_FIELDS,
+  SEARCH_FILTER,
+  SEARCH_PAGE_SIZE,
+  SEARCH_SORT,
+  SEARCH_DEFAULT_QUERY,
+} from "../config";
+
 const BASE = "https://freesound.org/apiv2";
 
 type SearchResponse = unknown;
 
-export async function searchOnce(query: string): Promise<SearchResponse> {
+export async function searchOnce(query: string = SEARCH_DEFAULT_QUERY): Promise<SearchResponse> {
   const token = import.meta.env.VITE_FREESOUND_TOKEN;
   if (!token) {
     throw new Error("Missing VITE_FREESOUND_TOKEN in .env");
   }
-  const filter =
-    'tag:rain -tag:"rain stick" -tag:rainstick -tag:instrument -tag:music duration:[30 TO 240]';
-
+  
   const params = new URLSearchParams({
     query,
-    filter,
-    sort: "rating_desc",
-    page_size: "10",
-    fields:
-      "id,name,license,username,previews,tags,duration,avg_rating,num_ratings,download,analysis_stats",
+    filter: SEARCH_FILTER,
+    sort: SEARCH_SORT,
+    page_size: String(SEARCH_PAGE_SIZE),
+    fields: SEARCH_FIELDS,
   });
 
   const res = await fetch(`${BASE}/search/text/?${params.toString()}`, {

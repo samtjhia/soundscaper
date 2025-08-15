@@ -1,5 +1,6 @@
 import React from "react";
 import { searchOnce } from "./freesound/client";
+import { AUTO_RUN_ON_LOAD, SEARCH_DEFAULT_QUERY } from "./config";
 
 type FSItem = {
   id: number;
@@ -19,7 +20,7 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const data: any = await searchOnce("rain");
+      const data: any = await searchOnce(); // uses default query from config
       const rows: FSItem[] = (data?.results ?? []).map((r: any) => ({
         id: r.id,
         name: r.name,
@@ -30,7 +31,7 @@ export default function App() {
         previews: r.previews,
       }));
 
-      console.log("Freesound search (rain) raw:", data);
+      console.log("Freesound search raw:", data);
       console.table(
         rows.map((r) => ({
           id: r.id,
@@ -48,11 +49,12 @@ export default function App() {
       setLoading(false);
     }
   }
-
+  
   // for auto-run make URL have ?auto=1
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("auto") === "1") {
+    const autoFromUrl = params.get("auto") === "1";
+    if (autoFromUrl || AUTO_RUN_ON_LOAD) {
       runSearch();
     }
   }, []);
@@ -62,7 +64,7 @@ export default function App() {
       <div className="text-center space-y-3">
         <h1 className="text-3xl font-bold tracking-tight">SoundSketch</h1>
         <p className="text-sm text-gray-300">
-          Click to test Freesound “rain” search. Check the console.
+          Testing Freesound search for: <code className="text-gray-200">{SEARCH_DEFAULT_QUERY}</code>
         </p>
         <button
           onClick={runSearch}
