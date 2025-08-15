@@ -9,5 +9,15 @@ export const SEARCH_FILTER =
   'tag:rain -tag:"rain stick" -tag:rainstick -tag:instrument -tag:music duration:[30 TO 240]';
 
 // fields we want back
-export const SEARCH_FIELDS =
-  "id,name,license,username,previews,tags,duration,avg_rating,num_ratings,download,analysis_stats";
+export const SEARCH_FIELDS = [
+  "id",
+  "name",
+  "tags",
+  "license",
+  "username",
+  "duration",
+  "rating",
+  "num_downloads",
+  "previews", // this for the lq/hq urls
+] as const;
+
