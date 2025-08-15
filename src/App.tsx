@@ -9,21 +9,22 @@ export default function App() {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
   const [layers, setLayers] = useState<Layer[]>([]);
+
+  const layerAudioRefs = React.useRef<Record<string, HTMLAudioElement | null>>({});
+  const [volumes, setVolumes] = useState<Record<string, number>>({});
 
   function selectPreviewUrl(item?: FSItem | null): string | null {
     if (!item?.previews) return null;
     return item.previews["preview-lq-mp3"] ?? item.previews["preview-hq-mp3"] ?? null;
   }
 
+
   async function runSearch() {
     setLoading(true);
     setError(null);
     try {
-      const tags = pickInitialTags(); // e.g. ["roomtone","light_rain","distant_chatter","footsteps_stone"]
+      const tags = pickInitialTags();
 
       const results = await Promise.all(
         tags.map(async (tag) => {
@@ -51,7 +52,7 @@ export default function App() {
             tag,
             item,
             gain: gainForTag(tag),
-            link: `https://freesound.org/s/${item.id}/`, // build link ourselves
+            link: `https://freesound.org/s/${item.id}/`,
           };
           return layer;
         })
@@ -72,10 +73,6 @@ export default function App() {
         }))
       );
 
-      // Keep your existing single <audio> flow alive: choose the first layer’s preview
-      const firstUrl = selectPreviewUrl(usable[0]?.item ?? null);
-      setPreviewUrl(firstUrl ?? null);
-      if (!firstUrl) console.warn("No preview URL on first layer");
     } catch (e: any) {
       console.error(e);
       setError(e?.message ?? "Unknown error");
@@ -84,38 +81,56 @@ export default function App() {
     }
   }
 
+  useEffect(() => {
+    if (!layers.length) return;
+    setVolumes(prev => {
+      const next = { ...prev };
+      for (const L of layers) {
+        if (next[L.id] == null) next[L.id] = L.gain;
+      }
+      return next;
+    });
+  }, [layers]);
+
+  useEffect(() => {
+    for (const L of layers) {
+      const a = layerAudioRefs.current[L.id];
+      if (a) a.volume = volumes[L.id] ?? L.gain;
+    }
+  }, [layers, volumes]);
+
 
   useEffect(() => {
     return () => {
-      const a = audioRef.current;
-      if (a) {
-        try {
-          a.pause();
-        } catch { }
+      for (const L of layers) {
+        const a = layerAudioRefs.current[L.id];
+        if (!a) continue;
+        try { a.pause(); } catch { }
         a.src = "";
-        a.load();
+        try { a.load(); } catch { }
       }
     };
-  }, []);
+  }, [layers]);
 
-  const handlePlay = () => {
-    if (!previewUrl) return;
-    const a = audioRef.current;
-    if (!a) return;
-    a.loop = true;
-    a.volume = 0.6;
-    a.currentTime = 0;
-    a.play().catch((err) => {
-      console.warn("Audio play blocked or failed:", err);
-    });
+
+  const handlePlayAll = () => {
+    for (const L of layers) {
+      const a = layerAudioRefs.current[L.id];
+      if (!a) continue;
+      a.loop = true;
+      a.currentTime = 0;
+      a.play().catch(err => console.warn("play failed", L.id, err));
+    }
   };
 
-  const handleStop = () => {
-    const a = audioRef.current;
-    if (!a) return;
-    a.pause();
-    a.currentTime = 0;
+  const handleStopAll = () => {
+    for (const L of layers) {
+      const a = layerAudioRefs.current[L.id];
+      if (!a) continue;
+      try { a.pause(); a.currentTime = 0; } catch { }
+    }
   };
+
 
   // for auto-run make URL have ?auto=1
   React.useEffect(() => {
@@ -131,7 +146,8 @@ export default function App() {
       <div className="text-center space-y-3">
         <h1 className="text-3xl font-bold tracking-tight">SoundSketch</h1>
         <p className="text-sm text-gray-300">
-          Testing Freesound search for: <code className="text-gray-200">{SEARCH_DEFAULT_QUERY}</code>
+          Testing Freesound search for:{" "}
+          <code className="text-gray-200">{SEARCH_DEFAULT_QUERY}</code>
         </p>
 
         <div className="flex items-center justify-center gap-2">
@@ -144,20 +160,18 @@ export default function App() {
           </button>
 
           <button
-            onClick={handlePlay}
-            disabled={!previewUrl}
+            onClick={handlePlayAll}
+            disabled={!layers.length}
             className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50"
-            title={previewUrl ? "Play looped preview" : "Search first"}
           >
-            Play (loop)
+            Play All
           </button>
-
           <button
-            onClick={handleStop}
-            disabled={!previewUrl}
+            onClick={handleStopAll}
+            disabled={!layers.length}
             className="px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50"
           >
-            Stop
+            Stop All
           </button>
         </div>
 
@@ -167,13 +181,83 @@ export default function App() {
           Tip: add <code>?auto=1</code> to the URL to auto-run on page load.
         </p>
 
-        <p className="text-xs text-gray-400">
-          {previewUrl ? "Preview ready." : "No preview selected yet."}
-        </p>
+        {layers.length > 0 ? (
+          <div className="mt-4 grid gap-3 max-w-lg mx-auto text-left">
+            {layers.map((L) => {
+              const v = volumes[L.id] ?? L.gain;
+              return (
+                <div key={L.id} className="rounded-xl bg-white/5 p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold text-gray-100">
+                      {L.tag}
+                    </div>
+                    <div className="text-xs text-gray-300 tabular-nums w-16 text-right">
+                      {(v * 100).toFixed(0)}%
+                    </div>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={v}
+                    onChange={(e) => {
+                      const nv = parseFloat(e.target.value);
+                      setVolumes((prev) => ({ ...prev, [L.id]: nv }));
+                      const a = layerAudioRefs.current[L.id];
+                      if (a) a.volume = nv;
+                    }}
+                    className="w-full mt-2 accent-emerald-400"
+                    aria-label={`${L.tag} volume`}
+                  />
+                  <div className="mt-2 text-xs text-gray-300">
+                    <div className="opacity-90">
+                      {L.item?.name} — by {L.item?.username}
+                    </div>
+                    <div className="opacity-70">
+                      {L.item?.license}
+                      {L.link ? (
+                        <>
+                          {" • "}
+                          <a
+                            className="underline"
+                            href={L.link}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            link
+                          </a>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-xs text-gray-400 mt-3">
+            No layers yet. Click <em>Test Freesound</em> to build layers.
+          </p>
+        )}
 
-        {/* hidden audio element controlled via ref */}
-        <audio ref={audioRef} src={previewUrl ?? undefined} preload="auto" />
+        <div className="sr-only">
+          {layers.map((L) => {
+            const src = selectPreviewUrl(L.item) ?? undefined;
+            return (
+              <audio
+                key={L.id}
+                ref={(el: HTMLAudioElement | null) => {
+                  layerAudioRefs.current[L.id] = el;
+                }}
+                src={src}
+                preload="auto"
+              />
+            );
+          })}
+        </div>
       </div>
     </main>
   );
+
 }
