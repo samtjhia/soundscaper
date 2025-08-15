@@ -1,20 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { searchOnce } from "./freesound/client";
 import { AUTO_RUN_ON_LOAD, SEARCH_DEFAULT_QUERY } from "./config";
+import type { FSItem, Layer } from "./types";
+import { pickInitialTags, gainForTag } from "./ai/rules";
 
-type FSItem = {
-  id: number;
-  name?: string;
-  duration?: number;
-  license?: string;
-  username?: string;
-  tags?: string[];
-  previews?: {
-    "preview-lq-mp3"?: string;
-    "preview-hq-mp3"?: string;
-    [key: string]: string | undefined;
-  };
-};
 
 export default function App() {
   const [loading, setLoading] = React.useState(false);
