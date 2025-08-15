@@ -4,6 +4,7 @@ import {
   SEARCH_PAGE_SIZE,
   SEARCH_SORT,
   SEARCH_DEFAULT_QUERY,
+  SEARCH_FIELDS_PARAM
 } from "../config";
 
 const BASE = "https://freesound.org/apiv2";
@@ -21,7 +22,7 @@ export async function searchOnce(query: string = SEARCH_DEFAULT_QUERY): Promise<
     filter: SEARCH_FILTER,
     sort: SEARCH_SORT,
     page_size: String(SEARCH_PAGE_SIZE),
-    fields: SEARCH_FIELDS,
+    fields: SEARCH_FIELDS_PARAM,
   });
 
   const res = await fetch(`${BASE}/search/text/?${params.toString()}`, {

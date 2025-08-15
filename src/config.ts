@@ -21,3 +21,6 @@ export const SEARCH_FIELDS = [
   "previews", // this for the lq/hq urls
 ] as const;
 
+export const SEARCH_FIELDS_PARAM = (SEARCH_FIELDS as readonly string[]).join(",");
+
+
