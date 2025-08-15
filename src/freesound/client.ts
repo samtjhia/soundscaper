@@ -1,5 +1,4 @@
 import {
-  SEARCH_FIELDS,
   SEARCH_FILTER,
   SEARCH_PAGE_SIZE,
   SEARCH_SORT,
@@ -7,34 +6,31 @@ import {
   SEARCH_FIELDS_PARAM
 } from "../config";
 
+import type { FSItem } from "../types";
+
 const BASE = "https://freesound.org/apiv2";
 
-type SearchResponse = unknown;
+export type SearchResponse = {
+  count: number;
+  results: FSItem[]; // reuse your shared item type
+};
 
-export async function searchOnce(query: string = SEARCH_DEFAULT_QUERY): Promise<SearchResponse> {
-  const token = import.meta.env.VITE_FREESOUND_TOKEN;
-  if (!token) {
-    throw new Error("Missing VITE_FREESOUND_TOKEN in .env");
-  }
-  
-  const params = new URLSearchParams({
-    query,
-    filter: SEARCH_FILTER,
-    sort: SEARCH_SORT,
-    page_size: String(SEARCH_PAGE_SIZE),
-    fields: SEARCH_FIELDS_PARAM,
+export async function searchOnce(query?: string): Promise<SearchResponse> {
+  const q = query ?? SEARCH_DEFAULT_QUERY;
+
+  const url = new URL(`${BASE}/search/text/`);
+  url.searchParams.set("query", q);
+  url.searchParams.set("filter", SEARCH_FILTER);
+  url.searchParams.set("fields", SEARCH_FIELDS_PARAM);
+  url.searchParams.set("page_size", String(SEARCH_PAGE_SIZE));
+  url.searchParams.set("sort", SEARCH_SORT);
+
+  const res = await fetch(url.toString(), {
+    headers: { Authorization: `Token ${import.meta.env.VITE_FREESOUND_TOKEN}` },
   });
-
-  const res = await fetch(`${BASE}/search/text/?${params.toString()}`, {
-    headers: {
-      Authorization: `Token ${token}`,
-      Accept: "application/json",
-    },
-  });
-
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Freesound HTTP ${res.status}: ${text || res.statusText}`);
+    throw new Error(`Freesound search failed: ${res.status}`);
   }
-  return res.json();
+  const json = (await res.json()) as SearchResponse;
+  return json;
 }

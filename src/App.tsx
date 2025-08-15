@@ -12,49 +12,70 @@ export default function App() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  const [layers, setLayers] = useState<Layer[]>([]);
+
+  function selectPreviewUrl(item?: FSItem | null): string | null {
+    if (!item?.previews) return null;
+    return item.previews["preview-lq-mp3"] ?? item.previews["preview-hq-mp3"] ?? null;
+  }
+
   async function runSearch() {
     setLoading(true);
     setError(null);
     try {
-      const data: any = await searchOnce(); // uses default query from config
-      const rows: FSItem[] = (data?.results ?? []).map((r: any) => ({
-        id: r.id,
-        name: r.name,
-        duration: r.duration,
-        license: r.license,
-        username: r.username,
-        tags: r.tags,
-        previews: r.previews,
-      }));
+      const tags = pickInitialTags(); // e.g. ["roomtone","light_rain","distant_chatter","footsteps_stone"]
 
-      console.log("Freesound search raw:", data);
+      const results = await Promise.all(
+        tags.map(async (tag) => {
+          const data: any = await searchOnce(tag);
+          const rows: FSItem[] = (data?.results ?? []).map((r: any) => ({
+            id: r.id,
+            name: r.name,
+            duration: r.duration,
+            license: r.license,
+            username: r.username,
+            tags: r.tags,
+            previews: r.previews,
+          }));
+
+          const item = rows.find(
+            (r) => !!(r.previews?.["preview-lq-mp3"] || r.previews?.["preview-hq-mp3"])
+          );
+          if (!item) {
+            console.warn(`[${tag}] no usable preview found`);
+            return null;
+          }
+
+          const layer: Layer = {
+            id: `${tag}-${item.id}`,
+            tag,
+            item,
+            gain: gainForTag(tag),
+            link: `https://freesound.org/s/${item.id}/`, // build link ourselves
+          };
+          return layer;
+        })
+      );
+
+      const usable = results.filter((x): x is Layer => !!x);
+      setLayers(usable);
+
       console.table(
-        rows.map((r) => ({
-          id: r.id,
-          name: r.name,
-          duration: r.duration,
-          license: r.license,
-          username: r.username,
-          tags: (r.tags || []).slice(0, 6).join(", "),
+        usable.map((L) => ({
+          id: L.id,
+          tag: L.tag,
+          gain: L.gain,
+          name: L.item?.name,
+          by: L.item?.username,
+          license: L.item?.license,
+          previewUrl: (selectPreviewUrl(L.item) ?? "").slice(0, 60) + "...",
         }))
       );
 
-      const firstWithPreview = rows.find(r => {
-        const p = r.previews;
-        return !!(p && (p["preview-lq-mp3"] || p["preview-hq-mp3"]));
-      });
-
-      const url =
-        firstWithPreview?.previews?.["preview-lq-mp3"] ??
-        firstWithPreview?.previews?.["preview-hq-mp3"] ??
-        null;
-
-      setPreviewUrl(url);
-      if (url) {
-        console.log("Selected preview URL:", url);
-      } else {
-        console.warn("No usable preview URL found in results.");
-      }
+      // Keep your existing single <audio> flow alive: choose the first layer’s preview
+      const firstUrl = selectPreviewUrl(usable[0]?.item ?? null);
+      setPreviewUrl(firstUrl ?? null);
+      if (!firstUrl) console.warn("No preview URL on first layer");
     } catch (e: any) {
       console.error(e);
       setError(e?.message ?? "Unknown error");
@@ -63,13 +84,14 @@ export default function App() {
     }
   }
 
+
   useEffect(() => {
     return () => {
       const a = audioRef.current;
       if (a) {
         try {
           a.pause();
-        } catch {}
+        } catch { }
         a.src = "";
         a.load();
       }
