@@ -7,10 +7,14 @@ export async function searchOnce(query: string): Promise<SearchResponse> {
   if (!token) {
     throw new Error("Missing VITE_FREESOUND_TOKEN in .env");
   }
+  const filter =
+    'tag:rain -tag:"rain stick" -tag:rainstick -tag:instrument -tag:music duration:[30 TO 240]';
 
   const params = new URLSearchParams({
     query,
-    page_size: "5",
+    filter,
+    sort: "rating_desc",
+    page_size: "10",
     fields:
       "id,name,license,username,previews,tags,duration,avg_rating,num_ratings,download,analysis_stats",
   });
