@@ -2,9 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { searchOnce, getById } from "./freesound/client";
 import { AUTO_RUN_ON_LOAD, SEARCH_DEFAULT_QUERY, CACHE_TTL_MS, FETCH_VERSION } from "./config";
 import type { FSItem, Layer } from "./types";
-import { mapPromptToTags, gainForTag } from "./ai/rules";
+import { gainForTag } from "./ai/rules";
+import { aiService } from "./ai/ai-service";
 import { getCache, setCache, clearOldCache, clearOldVersions, clearAllCache } from "./cache/idb";
-import { hashPromptTagsWithGains } from "./cache/hash";
 import { allWhitelist, pickWhitelist, WL_CACHE_PREFIX } from "./freesound/whitelist";
 
 
@@ -22,6 +22,11 @@ export default function App() {
 
   const [cacheStatus, setCacheStatus] = useState<string | null>(null);
   const [clearing, setClearing] = useState(false);
+  const [aiAnalysis, setAiAnalysis] = useState<{
+    source: 'llm' | 'rules' | 'fallback';
+    confidence: number;
+    reasoning?: string;
+  } | null>(null);
 
   const alternatesRef = React.useRef<Record<string, FSItem[]>>({});
   const altIndexRef = React.useRef<Record<string, number>>({});
@@ -127,23 +132,39 @@ export default function App() {
   async function runSearch(promptOverride?: string) {
     setLoading(true);
     setError(null);
+    setAiAnalysis(null);
 
     beginSceneRebuild();
-
 
     const p = (promptOverride ?? prompt ?? "").trim();
 
     try {
-      const { tags, gainScale } = mapPromptToTags(p);
+      // Use AI service instead of hardcoded rules
+      console.log("[AI] Starting analysis for prompt:", p);
+      const aiResult = await aiService.analyzePrompt(p);
+      
+      setAiAnalysis({
+        source: aiResult.source,
+        confidence: aiResult.confidence,
+        reasoning: aiResult.reasoning
+      });
+
+      const { tags, gainScale, baseGainsMap } = aiResult;
       setRulesScale(gainScale);
       setMixScale(gainScale);
 
-      console.log("[rules]", { p, tags, gainScale });
+      console.log("[AI] Analysis complete:", { 
+        source: aiResult.source, 
+        tags, 
+        gainScale, 
+        confidence: aiResult.confidence,
+        tagsToAvoid: aiResult.llmSuggestions?.tagsToAvoid 
+      });
 
-      const baseGainsMap = Object.fromEntries(tags.map(tag => [tag, gainForTag(tag)]));
-
-      const promptForHash = `rules:v2|${p.toLowerCase()}`;
-      const cacheKey = hashPromptTagsWithGains(promptForHash, tags, baseGainsMap);
+      // Use prompt-only cache key to ensure consistent hits for same user input
+      const cacheKey = `${FETCH_VERSION}:prompt|${p.toLowerCase()}`;
+      
+      console.log("[cache] Using prompt-based key:", cacheKey);
 
       clearOldCache(CACHE_TTL_MS).catch(() => { });
       await clearOldVersions(FETCH_VERSION + ":");
@@ -214,7 +235,11 @@ export default function App() {
       const results = await Promise.all(
         tags.map(async (tag) => {
           const data = byTag?.[tag];
-          const rows: FSItem[] = (data?.results ?? [])
+          const rawResults = data?.results ?? [];
+          console.log(`[${tag}] Raw search results:`, rawResults.length);
+          
+          // Map all results first (don't filter by preview yet)
+          const allCandidates: FSItem[] = rawResults
             .map((r: any) => ({
               id: r.id,
               name: r.name,
@@ -223,33 +248,203 @@ export default function App() {
               username: r.username,
               tags: r.tags,
               previews: r.previews,
-            }))
-            .filter(hasUsablePreview);
+              rating: r.rating || 0,
+              num_downloads: r.num_downloads || 0,
+            }));
 
-          const item = rows[0] ?? null;
-          if (!item) {
-            console.warn(`[${tag}] no usable preview found (after filtering)`);
+          if (allCandidates.length === 0) {
+            console.warn(`[${tag}] no search results at all`);
             return null;
           }
 
-          alternatesRef.current[tag] = rows.filter(r => r.id !== item.id);
+          // Score ALL candidates first
+          console.log(`[${tag}] Scoring ${allCandidates.length} candidates...`);
+          
+          const scoredCandidates = allCandidates.map((candidate: any) => {
+            let score = 0;
+            
+            // Rating score (0-5 stars, normalize to 0-1)
+            score += (candidate.rating || 0) / 5 * 0.4;
+            
+            // Downloads score (logarithmic, popular sounds are better)
+            const downloads = candidate.num_downloads || 1;
+            score += Math.min(Math.log10(downloads) / 4, 1) * 0.3; // Cap at 10k downloads = max score
+            
+            // Duration score (prefer 30-120 seconds for loops)
+            const duration = candidate.duration || 60;
+            if (duration >= 30 && duration <= 120) {
+              score += 0.2;
+            } else if (duration >= 15 && duration <= 240) {
+              score += 0.1;
+            }
+            
+            // Title quality score (avoid obvious music indicators)
+            const title = (candidate.name || '').toLowerCase();
+            if (title.includes('loop') || title.includes('ambient')) {
+              score += 0.1;
+            }
+            if (title.includes('music') || title.includes('song') || title.includes('track')) {
+              score -= 0.3;
+            }
+            if (title.includes('melody') || title.includes('beat') || title.includes('chord')) {
+              score -= 0.2;
+            }
+            
+            return { candidate, score };
+          });
+
+          // Sort by score (best first)
+          scoredCandidates.sort((a: any, b: any) => b.score - a.score);
+          
+          // Find the best candidate that has a usable preview
+          let bestItem: FSItem | null = null;
+          let selectedIndex = -1;
+          
+          for (let i = 0; i < scoredCandidates.length; i++) {
+            const { candidate } = scoredCandidates[i];
+            if (hasUsablePreview(candidate)) {
+              bestItem = candidate;
+              selectedIndex = i;
+              break;
+            } else {
+              console.log(`[${tag}] Skipping candidate ${i + 1}: "${candidate.name}" - no usable preview`);
+            }
+          }
+
+          if (!bestItem) {
+            console.warn(`[${tag}] no candidates with usable previews found (checked ${scoredCandidates.length} options)`);
+            return null;
+          }
+
+          console.log(`[${tag}] Selected "${bestItem.name}" (score: ${scoredCandidates[selectedIndex].score.toFixed(2)}, rank: ${selectedIndex + 1}/${scoredCandidates.length})`);
+
+          // Try LLM scoring if available (as additional validation)
+          if (aiService.isLLMEnabled() && allCandidates.length > 2) {
+            try {
+              const candidatesForLLM = allCandidates.slice(0, 5).map((c: any) => ({
+                id: c.id,
+                name: c.name || 'Untitled',
+                tags: c.tags || [],
+                username: c.username || 'Unknown'
+              }));
+              
+              const llmScores = await aiService.scoreAudioOptions(p, candidatesForLLM);
+              const llmBest = llmScores.reduce((best, current) => 
+                current.relevanceScore > best.relevanceScore ? current : best
+              );
+              const llmChoice = allCandidates.find((c: any) => String(c.id) === llmBest.audioId);
+              
+              // Only use LLM choice if it has a usable preview AND high relevance
+              if (llmChoice && hasUsablePreview(llmChoice) && llmBest.relevanceScore > 0.7) {
+                console.log(`[${tag}] LLM prefers "${llmChoice.name}" (relevance: ${llmBest.relevanceScore.toFixed(2)}): ${llmBest.reasoning}`);
+                bestItem = llmChoice;
+              }
+            } catch (error) {
+              console.warn(`[${tag}] LLM scoring failed:`, error);
+            }
+          }
+
+          // Store alternates for swapping (only those with usable previews)
+          alternatesRef.current[tag] = allCandidates.filter((r: any) => r.id !== bestItem?.id && hasUsablePreview(r));
           altIndexRef.current[tag] = 0;
 
-          const base = gainForTag(tag);
+          const base = baseGainsMap[tag] ?? gainForTag(tag);
           const layer: Layer = {
             id: tag,
             tag,
-            item,
+            item: bestItem,
             gain: base,
-            link: `https://freesound.org/s/${item.id}/`,
+            link: `https://freesound.org/s/${bestItem.id}/`,
           };
-
 
           return layer;
         })
       );
 
-      const usable = results.filter((x): x is Layer => !!x);
+      let usable = results.filter((x): x is Layer => !!x);
+      
+      // FALLBACK SYSTEM: If we don't have enough sounds, try to get more
+      const targetSounds = Math.max(3, Math.ceil(tags.length * 0.8)); // Aim for 80% success rate, minimum 3
+      const maxFallbackAttempts = 2;
+      let fallbackAttempts = 0;
+      
+      console.log(`[FALLBACK] Target: ${targetSounds} sounds, Current: ${usable.length}, Missing: ${tags.length - usable.length}`);
+      
+      while (usable.length < targetSounds && fallbackAttempts < maxFallbackAttempts) {
+        fallbackAttempts++;
+        console.log(`[FALLBACK] Attempt ${fallbackAttempts}: Only ${usable.length}/${targetSounds} sounds found. Trying fallback tags...`);
+        
+        try {
+          // Get fallback tags from LLM
+          const failedTags = tags.filter(tag => !usable.some(layer => layer.tag === tag));
+          console.log(`[FALLBACK] Failed tags:`, failedTags);
+          
+          if (aiService.isLLMEnabled()) {
+            const fallbackPrompt = `The original tags [${failedTags.join(', ')}] failed to find audio for "${p}". Suggest ${targetSounds - usable.length} alternative single-word tags that would create similar atmosphere but are more likely to have audio samples available. Return only the tags, comma-separated.`;
+            
+            // Use LLM service directly instead of fetch
+            const fallbackTags = await aiService.generateFallbackTags(fallbackPrompt, targetSounds - usable.length);
+            console.log(`[FALLBACK] Trying alternative tags:`, fallbackTags);
+            
+            // Try fallback tags
+            const fallbackResults = await Promise.all(
+              fallbackTags.map(async (tag: string) => {
+                try {
+                  const data = await withTimeout(searchOnce(tag), 8_000);
+                  if (data?.results?.length > 0) {
+                    const candidates = data.results
+                      .map((r: any) => ({
+                        id: r.id,
+                        name: r.name,
+                        duration: r.duration,
+                        license: r.license,
+                        username: r.username,
+                        tags: r.tags,
+                        previews: r.previews,
+                        rating: r.rating || 0,
+                        num_downloads: r.num_downloads || 0,
+                      }))
+                      .filter(hasUsablePreview);
+                      
+                    if (candidates.length > 0) {
+                      const bestItem = candidates[0]; // Just take first usable one for speed
+                      console.log(`[FALLBACK] Found "${bestItem.name}" for tag "${tag}"`);
+                      
+                      const base = gainForTag(tag);
+                      const layer: Layer = {
+                        id: `fallback-${tag}`,
+                        tag,
+                        item: bestItem,
+                        gain: base,
+                        link: `https://freesound.org/s/${bestItem.id}/`,
+                      };
+                      return layer;
+                    }
+                  }
+                } catch (err) {
+                  console.warn(`[FALLBACK] Failed to search for "${tag}":`, err);
+                }
+                return null;
+              })
+            );
+            
+            const newLayers = fallbackResults.filter((x: any): x is Layer => !!x);
+            usable = [...usable, ...newLayers];
+            console.log(`[FALLBACK] Added ${newLayers.length} new sounds. Total: ${usable.length}`);
+            
+            if (newLayers.length === 0) {
+              console.log(`[FALLBACK] No new sounds found, stopping fallback attempts`);
+              break;
+            }
+          } else {
+            console.log(`[FALLBACK] LLM not available, skipping fallback`);
+            break;
+          }
+        } catch (fallbackErr) {
+          console.warn(`[FALLBACK] Fallback attempt ${fallbackAttempts} failed:`, fallbackErr);
+        }
+      }
+      
       setLayers(usable);
 
       console.table(
@@ -431,40 +626,150 @@ export default function App() {
 
   async function handleSwap(L: Layer) {
     const tag = L.tag;
+    const currentPrompt = prompt || '';
 
-    let list = alternatesRef.current[tag] ?? [];
-    if (list.length === 0) {
+    console.log(`[swap] Finding intelligent alternative for tag "${tag}" in context: "${currentPrompt}"`);
+
+    // Do a fresh search to get current candidates
+    let data: any = null;
+    if (!DEV_FORCE_FALLBACK) {
+      try {
+        data = await withTimeout(searchOnce(tag), 10_000);
+      } catch (err) {
+        console.warn(`[swap] search failed or timed out for ${tag}`, err);
+      }
+    }
+
+    // Fallback to whitelist if search fails
+    if (!data || !(Array.isArray(data.results) && data.results.length > 0)) {
       const wid = pickWhitelist(tag);
       if (wid != null) {
         const wlKey = `${FETCH_VERSION}:${WL_CACHE_PREFIX}${wid}`;
         try {
           const cached = await getCache<any>(wlKey);
           if (cached?.data) {
-            list = [cached.data as FSItem];
+            data = { results: [cached.data] };
           } else {
             const item = await getById(wid);
             await setCache(wlKey, item);
-            list = [item];
+            data = { results: [item] };
           }
-          alternatesRef.current[tag] = list;
-          altIndexRef.current[tag] = 0;
         } catch (e) {
           console.warn(`[swap] whitelist fetch failed for ${tag} id=${wid}`, e);
           return;
         }
       } else {
-        console.warn(`[swap] no alternates and no whitelist for tag=${tag}`);
+        console.warn(`[swap] no search results and no whitelist for tag=${tag}`);
         return;
       }
     }
 
-    const idx = (altIndexRef.current[tag] ?? 0) % list.length;
-    const nextItem = list[idx];
-    altIndexRef.current[tag] = (idx + 1) % list.length;
+    // Map all results first (don't filter by preview yet, but exclude current item)
+    const allCandidates: FSItem[] = (data?.results ?? [])
+      .map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        duration: r.duration,
+        license: r.license,
+        username: r.username,
+        tags: r.tags,
+        previews: r.previews,
+        rating: r.rating || 0,
+        num_downloads: r.num_downloads || 0,
+      }))
+      .filter((item: any) => item.id !== L.item?.id); // Exclude current item first
 
-    if (!hasUsablePreview(nextItem)) {
-      console.warn(`[swap] next item ${nextItem.id} has no usable preview`);
+    if (allCandidates.length === 0) {
+      console.warn(`[swap] no alternatives found for tag=${tag} (excluding current item)`);
       return;
+    }
+
+    // Score ALL candidates first
+    console.log(`[swap] Scoring ${allCandidates.length} alternatives for "${tag}"...`);
+    
+    const scoredCandidates = allCandidates.map((candidate: any) => {
+      let score = 0;
+      
+      // Rating score (0-5 stars, normalize to 0-1)
+      score += (candidate.rating || 0) / 5 * 0.4;
+      
+      // Downloads score (logarithmic, popular sounds are better)
+      const downloads = candidate.num_downloads || 1;
+      score += Math.min(Math.log10(downloads) / 4, 1) * 0.3; // Cap at 10k downloads = max score
+      
+      // Duration score (prefer 30-120 seconds for loops)
+      const duration = candidate.duration || 60;
+      if (duration >= 30 && duration <= 120) {
+        score += 0.2;
+      } else if (duration >= 15 && duration <= 240) {
+        score += 0.1;
+      }
+      
+      // Title quality score (avoid obvious music indicators)
+      const title = (candidate.name || '').toLowerCase();
+      if (title.includes('loop') || title.includes('ambient')) {
+        score += 0.1;
+      }
+      if (title.includes('music') || title.includes('song') || title.includes('track')) {
+        score -= 0.3;
+      }
+      if (title.includes('melody') || title.includes('beat') || title.includes('chord')) {
+        score -= 0.2;
+      }
+      
+      return { candidate, score };
+    });
+
+    // Sort by score (best first)
+    scoredCandidates.sort((a: any, b: any) => b.score - a.score);
+    
+    // Find the best candidate that has a usable preview
+    let nextItem: FSItem | null = null;
+    let selectedIndex = -1;
+    
+    for (let i = 0; i < scoredCandidates.length; i++) {
+      const { candidate } = scoredCandidates[i];
+      if (hasUsablePreview(candidate)) {
+        nextItem = candidate;
+        selectedIndex = i;
+        break;
+      } else {
+        console.log(`[swap] Skipping candidate ${i + 1}: "${candidate.name}" - no usable preview`);
+      }
+    }
+
+    if (!nextItem) {
+      console.warn(`[swap] no usable alternatives found for tag=${tag} (checked ${scoredCandidates.length} options)`);
+      return;
+    }
+
+    console.log(`[swap] Selected "${nextItem.name}" (score: ${scoredCandidates[selectedIndex].score.toFixed(2)}, rank: ${selectedIndex + 1}/${scoredCandidates.length})`);
+
+    // Try LLM validation for swap if available (as additional context validation)
+    if (aiService.isLLMEnabled() && allCandidates.length > 2 && currentPrompt) {
+      try {
+        const candidatesForLLM = allCandidates.slice(0, 5).map((c: any) => ({
+          id: c.id,
+          name: c.name || 'Untitled',
+          tags: c.tags || [],
+          username: c.username || 'Unknown'
+        }));
+        
+        const llmScores = await aiService.scoreAudioOptions(currentPrompt, candidatesForLLM);
+        const llmBest = llmScores.reduce((best, current) => 
+          current.relevanceScore > best.relevanceScore ? current : best
+        );
+        const llmChoice = allCandidates.find((c: any) => String(c.id) === llmBest.audioId);
+        
+        // Only use LLM choice if it has a usable preview AND high relevance
+        if (llmChoice && hasUsablePreview(llmChoice) && llmBest.relevanceScore > 0.7) {
+          console.log(`[swap] LLM prefers "${llmChoice.name}" (relevance: ${llmBest.relevanceScore.toFixed(2)}): ${llmBest.reasoning}`);
+          nextItem = llmChoice;
+        }
+      } catch (llmErr) {
+        console.warn(`[swap] LLM scoring failed for ${tag}:`, llmErr);
+        // Continue with scored best item
+      }
     }
 
     setLayers(prev =>
@@ -565,6 +870,31 @@ export default function App() {
     <main className="h-screen flex items-center justify-center bg-gray-950 text-gray-100">
       <div className="text-center space-y-3">
         <h1 className="text-3xl font-bold tracking-tight">SoundSketch</h1>
+        
+        {/* AI Analysis Status */}
+        {aiAnalysis && (
+          <div className="flex items-center justify-center gap-2">
+            <div
+              className={`text-xs px-2 py-1 rounded ${
+                aiAnalysis.source === 'llm' 
+                  ? "bg-purple-700 text-purple-100" 
+                  : aiAnalysis.source === 'fallback'
+                  ? "bg-orange-700 text-orange-100"
+                  : "bg-blue-700 text-blue-100"
+              }`}
+              title={aiAnalysis.reasoning || 'AI analysis complete'}
+            >
+              AI: {aiAnalysis.source.toUpperCase()} ({(aiAnalysis.confidence * 100).toFixed(0)}%)
+            </div>
+            {aiService.isLLMEnabled() && (
+              <div className="text-xs px-2 py-1 rounded bg-green-700 text-green-100">
+                🤖 LLM Ready
+              </div>
+            )}
+          </div>
+        )}
+        
+        {/* Cache Status */}
         {cacheStatus && (
           <div
             className={`text-xs px-2 py-1 rounded ${cacheStatus === "HIT"

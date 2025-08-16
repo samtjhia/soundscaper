@@ -5,6 +5,8 @@ export type FSItem = {
   license?: string;
   username?: string;
   tags?: string[];
+  rating?: number;
+  num_downloads?: number;
   previews?: {
     "preview-lq-mp3"?: string;
     "preview-hq-mp3"?: string;

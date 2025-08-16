@@ -7,7 +7,7 @@ export const AUTO_RUN_ON_LOAD = false;
 //used for every tag
 export const FILTER_DURATION = 'duration:[30 TO 240]';
 export const FILTER_LICENSE = 'license:"Creative Commons 0" OR license:"Attribution"';
-export const FILTER_EXCLUDES = '-tag:music -tag:musical -tag:remix -tag:melody -tag:instrument';
+export const FILTER_EXCLUDES = '-tag:music -tag:musical -tag:remix -tag:melody -tag:instrument -tag:song -tag:vocal -tag:singing -tag:piano -tag:guitar -tag:drum -tag:beat';
 
 export const QUERY_PREFERENCE = "loop";
 
@@ -27,4 +27,14 @@ export const SEARCH_FIELDS_PARAM = (SEARCH_FIELDS as readonly string[]).join(","
 
 export const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-export const FETCH_VERSION = "v5";
+export const FETCH_VERSION = "v6";
+
+export const LLM_CONFIG = {
+  provider: 'openai' as const,
+  model: 'gpt-4o-mini',
+  apiKey: import.meta.env.VITE_OPENAI_API_KEY || '',
+  maxTokens: 500,
+  temperature: 0.3,
+};
+
+export const LLM_ENABLED = Boolean(LLM_CONFIG.apiKey);
