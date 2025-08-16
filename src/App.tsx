@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { searchOnce } from "./freesound/client";
-import { AUTO_RUN_ON_LOAD, SEARCH_DEFAULT_QUERY, CACHE_TTL_MS } from "./config";
+import { AUTO_RUN_ON_LOAD, SEARCH_DEFAULT_QUERY, CACHE_TTL_MS, FETCH_VERSION} from "./config";
 import type { FSItem, Layer } from "./types";
 import { mapPromptToTags, gainForTag } from "./ai/rules";
 import { getCache, setCache, clearOldCache, clearOldVersions, clearAllCache } from "./cache/idb";
@@ -88,7 +88,7 @@ export default function App() {
       const cacheKey = hashPromptTagsWithGains(promptForHash, tags, baseGainsMap);
 
       clearOldCache(CACHE_TTL_MS).catch(() => { });
-      await clearOldVersions("v4:");
+      await clearOldVersions(FETCH_VERSION + ":");
 
       const cached = await getCache<{ byTag: Record<string, any> }>(cacheKey);
       let byTag: Record<string, any> | null = null;

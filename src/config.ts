@@ -26,3 +26,5 @@ export const SEARCH_FIELDS = [
 export const SEARCH_FIELDS_PARAM = (SEARCH_FIELDS as readonly string[]).join(",");
 
 export const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+export const FETCH_VERSION = "v4";

@@ -1,3 +1,5 @@
+import { FETCH_VERSION } from "../config";
+
 export function hashTags(tags: string[]): string {
   const s = JSON.stringify([...tags].sort());
   let h = 5381;
@@ -31,5 +33,5 @@ export function hashPromptTagsWithGains(
   for (let i = 0; i < s.length; i++) {
     h = ((h << 5) + h) ^ s.charCodeAt(i);
   }
-  return "v4:" + (h >>> 0).toString(16);
+  return FETCH_VERSION + ":" + (h >>> 0).toString(16);
 }

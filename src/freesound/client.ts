@@ -34,8 +34,6 @@ function tagToQueryHint(/* tag: string */): string {
   return QUERY_PREFERENCE;
 }
 
-export const FETCH_VERSION = "v4";
-
 export async function searchOnce(tag: string): Promise<SearchResponse> {
   const url = new URL(`${BASE}/search/text/`);
   url.searchParams.set("query", tagToQueryHint());
@@ -50,3 +48,30 @@ export async function searchOnce(tag: string): Promise<SearchResponse> {
   if (!res.ok) throw new Error(`Freesound search failed: ${res.status}`);
   return (await res.json()) as SearchResponse;
 }
+
+export async function getById(id: number): Promise<FSItem> {
+  const url = new URL(`${BASE}/sounds/${id}/`);
+  url.searchParams.set("fields", SEARCH_FIELDS_PARAM);
+
+  const res = await fetch(url.toString(), {
+    headers: { Authorization: `Token ${import.meta.env.VITE_FREESOUND_TOKEN}` },
+  });
+  if (!res.ok) {
+    throw new Error(`Freesound getById(${id}) failed: ${res.status}`);
+  }
+
+  const json = await res.json();
+  const item: FSItem = {
+    id: json.id,
+    name: json.name,
+    duration: json.duration,
+    license: json.license,
+    username: json.username,
+    tags: json.tags,
+    previews: json.previews,
+  };
+  return item;
+}
+
+
+
