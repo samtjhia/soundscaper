@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { searchOnce } from "./freesound/client";
 import { AUTO_RUN_ON_LOAD, SEARCH_DEFAULT_QUERY, CACHE_TTL_MS } from "./config";
 import type { FSItem, Layer } from "./types";
-import { pickInitialTags, gainForTag } from "./ai/rules";
+import { mapPromptToTags, gainForTag } from "./ai/rules";
 import { getCache, setCache, clearOldCache, clearOldVersions, clearAllCache } from "./cache/idb";
 import { hashPromptTagsWithGains } from "./cache/hash";
 
@@ -32,42 +32,62 @@ export default function App() {
     }
   }
 
+  const [prompt, setPrompt] = React.useState<string>(SEARCH_DEFAULT_QUERY || "rural alley dusk light rain");
+  function clamp01(x: number) {
+    return Math.max(0, Math.min(1, x));
+  }
+
+  function effectiveGain(id: string, base: number) {
+    const rel = volumes[id] ?? base;
+    return clamp01(rel * mixScale);
+  }
+
+  const [mixScale, setMixScale] = React.useState(1);
+  const [rulesScale, setRulesScale] = React.useState(1);
+
   function selectPreviewUrl(item?: FSItem | null): string | null {
     if (!item?.previews) return null;
     return item.previews["preview-lq-mp3"] ?? item.previews["preview-hq-mp3"] ?? null;
   }
 
-  async function runSearch() {
+  async function runSearch(promptOverride?: string) {
     setLoading(true);
     setError(null);
+
+    const p = (promptOverride ?? prompt ?? "").trim();
+
     try {
-      const tags = pickInitialTags();
-      const prompt = "test-prompt"; //FOR NOW
-      const gainsMap = Object.fromEntries(tags.map(tag => [tag, gainForTag(tag)]));
-      const cacheKey = hashPromptTagsWithGains(prompt, tags, gainsMap);
+      const { tags, gainScale } = mapPromptToTags(p);
+      setRulesScale(gainScale);
+      setMixScale(gainScale);
+
+      console.log("[rules]", { p, tags, gainScale });
+
+      const baseGainsMap = Object.fromEntries(tags.map(tag => [tag, gainForTag(tag)]));
+
+      const promptForHash = `rules:v1|${p.toLowerCase()}`;
+      const cacheKey = hashPromptTagsWithGains(promptForHash, tags, baseGainsMap);
 
       clearOldCache(CACHE_TTL_MS).catch(() => { });
       await clearOldVersions("v3:");
 
       const cached = await getCache<{ byTag: Record<string, any> }>(cacheKey);
       let byTag: Record<string, any> | null = null;
-
       const isFresh = cached ? (Date.now() - cached.timestamp) <= CACHE_TTL_MS : false;
 
       if (cached && isFresh && cached.data?.byTag) {
         byTag = cached.data.byTag;
-        console.log("[cache] HIT (fresh)", cacheKey, "prompt=", prompt, "tags=", tags.join(", "));
+        console.log("[cache] HIT (fresh)", cacheKey, "prompt=", p, "tags=", tags.join(", "));
         setCacheStatus("HIT");
       } else {
         if (cached && !isFresh) {
-          console.log("[cache] STALE (expired)", cacheKey, "prompt=", prompt);
+          console.log("[cache] STALE (expired)", cacheKey, "prompt=", p);
           setCacheStatus("STALE");
         } else {
-          console.log("[cache] MISS", cacheKey, "prompt=", prompt);
+          console.log("[cache] MISS", cacheKey, "prompt=", p);
           setCacheStatus("MISS");
         }
 
-        // fetch each tag from Freesound
         const entries = await Promise.all(
           tags.map(async (tag) => {
             const data: any = await searchOnce(tag);
@@ -76,12 +96,10 @@ export default function App() {
         );
         byTag = Object.fromEntries(entries);
 
-        // store fresh JSON
         await setCache(cacheKey, { byTag });
         console.log("[cache] STORED", cacheKey, "for tags=", tags.join(", "));
       }
 
-      // build layers from byTag (cached or fresh)
       const results = await Promise.all(
         tags.map(async (tag) => {
           const data = byTag?.[tag];
@@ -103,13 +121,15 @@ export default function App() {
             return null;
           }
 
+          const base = gainForTag(tag);
           const layer: Layer = {
             id: `${tag}-${item.id}`,
             tag,
             item,
-            gain: gainForTag(tag),
+            gain: base,
             link: `https://freesound.org/s/${item.id}/`,
           };
+
           return layer;
         })
       );
@@ -128,7 +148,6 @@ export default function App() {
           previewUrl: (selectPreviewUrl(L.item) ?? "").slice(0, 60) + "...",
         }))
       );
-
     } catch (e: any) {
       console.error(e);
       setError(e?.message ?? "Unknown error");
@@ -136,6 +155,24 @@ export default function App() {
       setLoading(false);
     }
   }
+
+  function applyGlobalScale(newScale: number) {
+    setMixScale(newScale);
+
+    for (const id of Object.keys(layerAudioRefs.current)) {
+      const a = layerAudioRefs.current[id];
+      if (!a) continue;
+      const L = layers.find(x => x.id === id);
+      if (!L) continue;
+      a.volume = effectiveGain(id, L.gain);
+    }
+  }
+
+  function nudgeMix(factor: number) {
+    const target = clamp01(mixScale * factor);
+    applyGlobalScale(target);
+  }
+
 
 
   useEffect(() => {
@@ -192,19 +229,32 @@ export default function App() {
     for (const L of layers) {
       const a = layerAudioRefs.current[L.id];
       if (!a) continue;
+
+      a.volume = effectiveGain(L.id, L.gain);
+
+      if (mutes && typeof mutes[L.id] === "boolean") {
+        a.muted = !!mutes[L.id];
+      }
+
       a.loop = true;
       a.currentTime = 0;
-      a.play().catch(err => console.warn("play failed", L.id, err));
+
+      a.play().catch(err => {
+        console.warn("play failed", L.id, err);
+      });
     }
   };
+
 
   const handleStopAll = () => {
     for (const L of layers) {
       const a = layerAudioRefs.current[L.id];
       if (!a) continue;
-      try { a.pause(); a.currentTime = 0; } catch { }
+      a.pause();
+      a.currentTime = 0;
     }
   };
+
 
 
   // for auto-run make URL have ?auto=1
@@ -233,13 +283,34 @@ export default function App() {
           </div>
         )}
         <p className="text-sm text-gray-300">
-          Testing Freesound search for:{" "}
-          <code className="text-gray-200">{SEARCH_DEFAULT_QUERY}</code>
+          Prompt: <code className="text-gray-200">{prompt}</code>
         </p>
+
+
+        <div className="w-full max-w-lg mx-auto mt-2">
+          <div className="flex items-center justify-center gap-2">
+            <input
+              className="flex-1 rounded-md bg-gray-900 border border-gray-700 px-3 py-2 text-sm"
+              placeholder='Describe a vibe… e.g., "quiet neon city at night with light rain"'
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+            />
+            <button
+              onClick={() => runSearch(prompt)}
+              disabled={loading}
+              className="px-3 py-2 rounded-md bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm font-medium"
+            >
+              {loading ? "Generating…" : "Generate"}
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            Try: <em>quiet neon city night drizzle</em> or <em>rural alley dusk light rain</em>
+          </p>
+        </div>
 
         <div className="flex items-center justify-center gap-2">
           <button
-            onClick={runSearch}
+            onClick={() => runSearch(prompt)}
             disabled={loading}
             className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 disabled:opacity-50"
           >
@@ -270,6 +341,33 @@ export default function App() {
           </button>
         </div>
 
+        <div className="flex items-center justify-center gap-2 mt-2 text-xs">
+          <span className="opacity-70">Mix:</span>
+          <button
+            className="rounded-md px-2 py-1 bg-white/10 hover:bg-white/15"
+            onClick={() => nudgeMix(0.9)}
+            disabled={loading || layers.length === 0}
+          >
+            Calmer −10%
+          </button>
+          <button
+            className="rounded-md px-2 py-1 bg-white/10 hover:bg-white/15"
+            onClick={() => nudgeMix(1.1)}
+            disabled={loading || layers.length === 0}
+          >
+            Busier +10%
+          </button>
+          <button
+            className="rounded-md px-2 py-1 bg-white/10 hover:bg-white/15"
+            onClick={() => applyGlobalScale(rulesScale)}
+            disabled={loading || layers.length === 0}
+            title="Reset to the rules-suggested intensity for this prompt"
+          >
+            Reset
+          </button>
+          <span className="opacity-60 ml-1">scale: {mixScale.toFixed(2)}</span>
+        </div>
+
         {error && <p className="text-red-400 text-sm">{error}</p>}
 
         <p className="text-xs text-gray-500">
@@ -279,7 +377,7 @@ export default function App() {
         {layers.length > 0 ? (
           <div className="mt-4 grid gap-3 max-w-lg mx-auto text-left">
             {layers.map((L) => {
-              const v = volumes[L.id] ?? L.gain;
+              const v = effectiveGain(L.id, L.gain);
               return (
                 <div key={L.id} className="rounded-xl bg-white/5 p-3">
                   <div className="flex items-center justify-between">
@@ -321,11 +419,13 @@ export default function App() {
                     step={0.01}
                     value={v}
                     onChange={(e) => {
-                      const nv = parseFloat(e.target.value);
-                      setVolumes((prev) => ({ ...prev, [L.id]: nv }));
+                      const effective = parseFloat(e.target.value);
+                      const rel = clamp01(effective / mixScale || 0);
+                      setVolumes((prev) => ({ ...prev, [L.id]: rel }));
                       const a = layerAudioRefs.current[L.id];
-                      if (a) a.volume = nv;
+                      if (a) a.volume = effective;
                     }}
+
                     disabled={!!isLoading[L.id]}
                     className="w-full mt-2 accent-emerald-400 disabled:opacity-50"
                     aria-label={`${L.tag} volume`}
