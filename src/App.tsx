@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { searchOnce } from "./freesound/client";
+import { searchOnce, getById } from "./freesound/client";
 import { AUTO_RUN_ON_LOAD, SEARCH_DEFAULT_QUERY, CACHE_TTL_MS, FETCH_VERSION } from "./config";
 import type { FSItem, Layer } from "./types";
 import { mapPromptToTags, gainForTag } from "./ai/rules";
 import { getCache, setCache, clearOldCache, clearOldVersions, clearAllCache } from "./cache/idb";
 import { hashPromptTagsWithGains } from "./cache/hash";
+import { allWhitelist, pickWhitelist, WL_CACHE_PREFIX } from "./freesound/whitelist";
+
 
 
 export default function App() {
@@ -81,6 +83,39 @@ export default function App() {
     setLayers([]);
   }
 
+  function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error("timeout")), ms);
+      p.then(
+        (v) => { clearTimeout(t); resolve(v); },
+        (e) => { clearTimeout(t); reject(e); }
+      );
+    });
+  }
+
+  async function seedWhitelistCache(maxPerTag = 2) {
+    const wl = allWhitelist(); // { tag: number[] }
+    for (const [tag, ids] of Object.entries(wl)) {
+      const pick = ids.slice(0, maxPerTag);
+      for (const id of pick) {
+        const key = `${FETCH_VERSION}:${WL_CACHE_PREFIX}${id}`;
+        try {
+          const hit = await getCache<any>(key);
+          if (hit?.data) {
+            console.log(`[seed] HIT ${tag} id=${id} -> ${key}`);
+            continue;
+          }
+          const item = await getById(id);
+          await setCache(key, item);
+          console.log(`[seed] STORED ${tag} id=${id} -> ${key}`);
+        } catch (e) {
+          console.warn(`[seed] failed ${tag} id=${id}`, e);
+        }
+      }
+    }
+    console.log("[seed] done");
+  }
+
 
   async function runSearch(promptOverride?: string) {
     setLoading(true);
@@ -125,10 +160,44 @@ export default function App() {
 
         const entries = await Promise.all(
           tags.map(async (tag) => {
-            const data: any = await searchOnce(tag);
+            let data: any = null;
+            if (!DEV_FORCE_FALLBACK) {
+              try {
+                data = await withTimeout(searchOnce(tag), 10_000);
+              } catch (err) {
+                console.warn(`[${tag}] search failed or timed out`, err);
+              }
+            }
+
+            if (!data || !(Array.isArray(data.results) && data.results.length > 0)) {
+              const wid = pickWhitelist(tag);
+              if (wid != null) {
+                const wlKey = `${FETCH_VERSION}:${WL_CACHE_PREFIX}${wid}`;
+
+                try {
+                  const cachedWl = await getCache<any>(wlKey);
+                  if (cachedWl?.data) {
+                    console.log(`[${tag}] whitelist HIT`, wid);
+                    data = { results: [cachedWl.data] };
+                  } else {
+                    const item = await getById(wid);
+                    await setCache(wlKey, item);
+                    console.log(`[${tag}] whitelist STORED`, wid);
+                    data = { results: [item] };
+                  }
+                } catch (e) {
+                  console.error(`[${tag}] whitelist fetch failed`, e);
+                  data = null;
+                }
+              } else {
+                console.warn(`[${tag}] no whitelist ID available`);
+              }
+            }
+
             return [tag, data] as const;
           })
         );
+
         byTag = Object.fromEntries(entries);
 
         await setCache(cacheKey, { byTag });
@@ -290,16 +359,18 @@ export default function App() {
     }
   };
 
-
+  // read once on mount
+  const params = new URLSearchParams(window.location.search);
+  const DEV_FORCE_FALLBACK = params.get("fallback") === "1";
 
   // for auto-run make URL have ?auto=1
   React.useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
     const autoFromUrl = params.get("auto") === "1";
     if (autoFromUrl || AUTO_RUN_ON_LOAD) {
       runSearch();
     }
   }, []);
+
 
   return (
     <main className="h-screen flex items-center justify-center bg-gray-950 text-gray-100">
@@ -374,6 +445,14 @@ export default function App() {
           >
             {clearing ? "Clearing…" : "Clear Cache"}
           </button>
+          <button
+            onClick={() => seedWhitelistCache(2)}
+            className="px-3 py-2 rounded-xl bg-sky-700 hover:bg-sky-600"
+            title="Fetch and cache wl:<id> items so fallback can work offline"
+          >
+            Seed Whitelist
+          </button>
+
         </div>
 
         <div className="flex items-center justify-center gap-2 mt-2 text-xs">

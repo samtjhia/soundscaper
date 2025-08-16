@@ -6,57 +6,57 @@ export const WL_CACHE_PREFIX = "wl:";
 const WHITELIST: WhitelistMap = {
   // core ambience
   roomtone: [
-    // TODO:
+    750643, 495865
   ],
   light_rain: [
-    // TODO
+    200271, 96729
   ],
   rain: [
-    // TODO
+    478665, 535869
   ],
   wind: [
-    // TODO
+    654566, 786265
   ],
   vinyl_crackle: [
-    // TODO
+    648313
   ],
 
   // people / textures
-  distant_chatter: [
-    // TODO
+  chatter: [
+    326967, 537761
   ],
-  footsteps_stone: [
-    // TODO
+  footsteps: [
+    194979, 777608
   ],
 
   // transport
   motorcycle: [
-    // TODO
+    632219
   ],
   subway: [
-    // TODO
+    745638, 726609
   ],
 
   // nature
   birds: [
-    // TODO
+    624126
   ],
   insects: [
-    // TODO
+    268959
   ],
   waves: [
-    // TODO
+    426075
   ],
   seagulls: [
-    // TODO
+    56532
   ],
 
   // urban texture / sfx
-  neon_buzz: [
-    // TODO
+  buzz: [
+    537769
   ],
   bell: [
-    // TODO
+    625059
   ],
 };
 

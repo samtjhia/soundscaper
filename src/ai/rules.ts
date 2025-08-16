@@ -4,12 +4,12 @@ const tagGainPriors: Record<string, number> = {
   rain: 0.50,
   wind: 0.45,
   vinyl_crackle: 0.30,
-  distant_chatter: 0.35,
-  footsteps_stone: 0.35,
+  chatter: 0.35,
+  footsteps: 0.35,
   motorcycle: 0.32,
   birds: 0.40,
   insects: 0.38,
-  neon_buzz: 0.28,
+  buzz: 0.28,
   waves: 0.42,
   seagulls: 0.38,
   subway: 0.36,
@@ -83,16 +83,16 @@ export function mapPromptToTags(prompt: string): { tags: string[]; gainScale: nu
   // subway / metro
   if (tokensHasAny(tokens, SUBWAY_WORDS)) {
     chosen.push("subway");
-    chosen.push("distant_chatter");
-    chosen.push("footsteps_stone");
-    chosen.push("neon_buzz");
+    chosen.push("chatter");
+    chosen.push("footsteps");
+    chosen.push("buzz");
   }
 
   // city textures
   if (tokensHasAny(tokens, CITY_WORDS)) {
-    chosen.push("distant_chatter");
+    chosen.push("chatter");
     if (tokensHasAny(tokens, NEON_WORDS) || tokensHasAny(tokens, NIGHT_WORDS)) {
-      chosen.push("neon_buzz");
+      chosen.push("buzz");
     }
     if (tokensHasAny(tokens, VEHICLE_2W)) {
       chosen.push("motorcycle");
@@ -100,7 +100,7 @@ export function mapPromptToTags(prompt: string): { tags: string[]; gainScale: nu
   }
 
   // footsteps
-  if (tokensHasAny(tokens, FOOTSTEP_WORDS)) chosen.push("footsteps_stone");
+  if (tokensHasAny(tokens, FOOTSTEP_WORDS)) chosen.push("footsteps");
 
   // rural / natural
   const isRuralish = tokensHasAny(tokens, RURAL_WORDS);
@@ -129,12 +129,12 @@ export function mapPromptToTags(prompt: string): { tags: string[]; gainScale: nu
     "waves",
     "seagulls",
     "subway",
-    "distant_chatter",
-    "footsteps_stone",
+    "chatter",
+    "footsteps",
     "birds",
     "insects",
     "motorcycle",
-    "neon_buzz",
+    "buzz",
     "bell",
     "vinyl_crackle",
   ] as const;
