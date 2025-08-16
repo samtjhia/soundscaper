@@ -4,7 +4,7 @@ import { AUTO_RUN_ON_LOAD, SEARCH_DEFAULT_QUERY, CACHE_TTL_MS } from "./config";
 import type { FSItem, Layer } from "./types";
 import { pickInitialTags, gainForTag } from "./ai/rules";
 import { getCache, setCache, clearOldCache } from "./cache/idb";
-import { hashTags } from "./cache/hash";
+import { hashPromptTags } from "./cache/hash";
 
 
 export default function App() {
@@ -18,6 +18,8 @@ export default function App() {
   const [mutes, setMutes] = useState<Record<string, boolean>>({});
   const [isLoading, setIsLoading] = useState<Record<string, boolean>>({});
 
+  const [cacheStatus, setCacheStatus] = useState<string | null>(null);
+
 
   function selectPreviewUrl(item?: FSItem | null): string | null {
     if (!item?.previews) return null;
@@ -29,9 +31,10 @@ export default function App() {
     setError(null);
     try {
       const tags = pickInitialTags();
-      const cacheKey = hashTags(tags);
+      const prompt = "test-prompt"; //FOR NOW
+      const cacheKey = hashPromptTags(prompt, tags);
 
-      clearOldCache(CACHE_TTL_MS).catch(() => {});
+      clearOldCache(CACHE_TTL_MS).catch(() => { });
 
       const cached = await getCache<{ byTag: Record<string, any> }>(cacheKey);
       let byTag: Record<string, any> | null = null;
@@ -40,12 +43,15 @@ export default function App() {
 
       if (cached && isFresh && cached.data?.byTag) {
         byTag = cached.data.byTag;
-        console.log("[cache] HIT (fresh)", cacheKey, "tags=", tags.join(", "));
+        console.log("[cache] HIT (fresh)", cacheKey, "prompt=", prompt, "tags=", tags.join(", "));
+        setCacheStatus("HIT");
       } else {
         if (cached && !isFresh) {
-          console.log("[cache] STALE (expired)", cacheKey, "→ re-querying Freesound");
+          console.log("[cache] STALE (expired)", cacheKey, "prompt=", prompt);
+          setCacheStatus("STALE");
         } else {
-          console.log("[cache] MISS", cacheKey, "tags=", tags.join(", "), "→ querying Freesound");
+          console.log("[cache] MISS", cacheKey, "prompt=", prompt);
+          setCacheStatus("MISS");
         }
 
         // fetch each tag from Freesound
@@ -201,6 +207,18 @@ export default function App() {
     <main className="h-screen flex items-center justify-center bg-gray-950 text-gray-100">
       <div className="text-center space-y-3">
         <h1 className="text-3xl font-bold tracking-tight">SoundSketch</h1>
+        {cacheStatus && (
+          <div
+            className={`text-xs px-2 py-1 rounded ${cacheStatus === "HIT"
+                ? "bg-emerald-700 text-emerald-100"
+                : cacheStatus === "STALE"
+                  ? "bg-amber-700 text-amber-100"
+                  : "bg-rose-700 text-rose-100"
+              }`}
+          >
+            Cache: {cacheStatus}
+          </div>
+        )}
         <p className="text-sm text-gray-300">
           Testing Freesound search for:{" "}
           <code className="text-gray-200">{SEARCH_DEFAULT_QUERY}</code>
