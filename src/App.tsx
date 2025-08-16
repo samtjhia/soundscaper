@@ -1010,7 +1010,7 @@ export default function App() {
         {layers.length > 0 ? (
           <div className="mt-4 grid gap-3 max-w-lg mx-auto text-left">
             {layers.map((L) => {
-              const v = effectiveGain(L.id, L.gain);
+              const sliderValue = volumes[L.id] ?? L.gain; // raw slider value (0-1)
               return (
                 <div key={L.id} className="rounded-xl bg-white/5 p-3">
                   <div className="flex items-center justify-between">
@@ -1050,7 +1050,7 @@ export default function App() {
 
 
                       <div className="text-xs text-gray-300 tabular-nums w-16 text-right">
-                        {(v * 100).toFixed(0)}%
+                        {(sliderValue * 100).toFixed(0)}%
                       </div>
                     </div>
                   </div>
@@ -1059,13 +1059,12 @@ export default function App() {
                     min={0}
                     max={1}
                     step={0.01}
-                    value={v}
+                    value={sliderValue}
                     onChange={(e) => {
-                      const effective = parseFloat(e.target.value);
-                      const rel = clamp01(effective / mixScale || 0);
-                      setVolumes((prev) => ({ ...prev, [L.id]: rel }));
+                      const newSliderValue = parseFloat(e.target.value);
+                      setVolumes((prev) => ({ ...prev, [L.id]: newSliderValue }));
                       const a = layerAudioRefs.current[L.id];
-                      if (a) a.volume = effective;
+                      if (a) a.volume = clamp01(newSliderValue * mixScale);
                     }}
 
                     disabled={!!isLoading[L.id]}
