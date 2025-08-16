@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { searchOnce } from "./freesound/client";
-import { AUTO_RUN_ON_LOAD, SEARCH_DEFAULT_QUERY, CACHE_TTL_MS, FETCH_VERSION} from "./config";
+import { AUTO_RUN_ON_LOAD, SEARCH_DEFAULT_QUERY, CACHE_TTL_MS, FETCH_VERSION } from "./config";
 import type { FSItem, Layer } from "./types";
 import { mapPromptToTags, gainForTag } from "./ai/rules";
 import { getCache, setCache, clearOldCache, clearOldVersions, clearAllCache } from "./cache/idb";
@@ -45,9 +45,25 @@ export default function App() {
   const [mixScale, setMixScale] = React.useState(1);
   const [rulesScale, setRulesScale] = React.useState(1);
 
+  function hasUsablePreview(item?: FSItem | null): boolean {
+    if (!item?.previews) return false;
+    return Boolean(
+      item.previews["preview-lq-mp3"] ||
+      item.previews["preview-hq-mp3"] ||
+      item.previews["preview-hq-ogg"] ||
+      item.previews["preview-lq-ogg"]
+    );
+  }
+
   function selectPreviewUrl(item?: FSItem | null): string | null {
     if (!item?.previews) return null;
-    return item.previews["preview-lq-mp3"] ?? item.previews["preview-hq-mp3"] ?? null;
+    return (
+      item.previews["preview-lq-mp3"] ||
+      item.previews["preview-hq-mp3"] ||
+      item.previews["preview-hq-ogg"] ||
+      item.previews["preview-lq-ogg"] ||
+      null
+    );
   }
 
   function beginSceneRebuild() {
@@ -122,21 +138,21 @@ export default function App() {
       const results = await Promise.all(
         tags.map(async (tag) => {
           const data = byTag?.[tag];
-          const rows: FSItem[] = (data?.results ?? []).map((r: any) => ({
-            id: r.id,
-            name: r.name,
-            duration: r.duration,
-            license: r.license,
-            username: r.username,
-            tags: r.tags,
-            previews: r.previews,
-          }));
+          const rows: FSItem[] = (data?.results ?? [])
+            .map((r: any) => ({
+              id: r.id,
+              name: r.name,
+              duration: r.duration,
+              license: r.license,
+              username: r.username,
+              tags: r.tags,
+              previews: r.previews,
+            }))
+            .filter(hasUsablePreview);
 
-          const item = rows.find(
-            (r) => !!(r.previews?.["preview-lq-mp3"] || r.previews?.["preview-hq-mp3"])
-          );
+          const item = rows[0] ?? null;
           if (!item) {
-            console.warn(`[${tag}] no usable preview found`);
+            console.warn(`[${tag}] no usable preview found (after filtering)`);
             return null;
           }
 
