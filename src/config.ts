@@ -23,4 +23,7 @@ export const SEARCH_FIELDS = [
 
 export const SEARCH_FIELDS_PARAM = (SEARCH_FIELDS as readonly string[]).join(",");
 
+// cache TTL is 7 days
+export const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 

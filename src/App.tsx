@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { searchOnce } from "./freesound/client";
-import { AUTO_RUN_ON_LOAD, SEARCH_DEFAULT_QUERY } from "./config";
+import { AUTO_RUN_ON_LOAD, SEARCH_DEFAULT_QUERY, CACHE_TTL_MS } from "./config";
 import type { FSItem, Layer } from "./types";
 import { pickInitialTags, gainForTag } from "./ai/rules";
+import { getCache, setCache, clearOldCache } from "./cache/idb";
+import { hashTags } from "./cache/hash";
 
 
 export default function App() {
@@ -22,16 +24,48 @@ export default function App() {
     return item.previews["preview-lq-mp3"] ?? item.previews["preview-hq-mp3"] ?? null;
   }
 
-
   async function runSearch() {
     setLoading(true);
     setError(null);
     try {
       const tags = pickInitialTags();
+      const cacheKey = hashTags(tags);
 
+      clearOldCache(CACHE_TTL_MS).catch(() => {});
+
+      const cached = await getCache<{ byTag: Record<string, any> }>(cacheKey);
+      let byTag: Record<string, any> | null = null;
+
+      const isFresh = cached ? (Date.now() - cached.timestamp) <= CACHE_TTL_MS : false;
+
+      if (cached && isFresh && cached.data?.byTag) {
+        byTag = cached.data.byTag;
+        console.log("[cache] HIT (fresh)", cacheKey, "tags=", tags.join(", "));
+      } else {
+        if (cached && !isFresh) {
+          console.log("[cache] STALE (expired)", cacheKey, "→ re-querying Freesound");
+        } else {
+          console.log("[cache] MISS", cacheKey, "tags=", tags.join(", "), "→ querying Freesound");
+        }
+
+        // fetch each tag from Freesound
+        const entries = await Promise.all(
+          tags.map(async (tag) => {
+            const data: any = await searchOnce(tag);
+            return [tag, data] as const;
+          })
+        );
+        byTag = Object.fromEntries(entries);
+
+        // store fresh JSON
+        await setCache(cacheKey, { byTag });
+        console.log("[cache] STORED", cacheKey, "for tags=", tags.join(", "));
+      }
+
+      // build layers from byTag (cached or fresh)
       const results = await Promise.all(
         tags.map(async (tag) => {
-          const data: any = await searchOnce(tag);
+          const data = byTag?.[tag];
           const rows: FSItem[] = (data?.results ?? []).map((r: any) => ({
             id: r.id,
             name: r.name,
@@ -83,6 +117,7 @@ export default function App() {
       setLoading(false);
     }
   }
+
 
   useEffect(() => {
     if (!layers.length) return;
