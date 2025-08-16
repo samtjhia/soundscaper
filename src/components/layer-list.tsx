@@ -7,6 +7,7 @@ interface LayerListProps {
   volumes: Record<string, number>;
   mutes: Record<string, boolean>;
   isLoading: Record<string, boolean>;
+  swapping: Record<string, boolean>;
   mixScale: number;
   layerAudioRefs: React.MutableRefObject<Record<string, HTMLAudioElement | null>>;
   onVolumeChange: (layerId: string, value: number) => void;
@@ -21,6 +22,7 @@ export function LayerList({
   volumes,
   mutes,
   isLoading,
+  swapping,
   mixScale,
   layerAudioRefs,
   onVolumeChange,
@@ -65,11 +67,16 @@ export function LayerList({
 
                 <button
                   onClick={() => onSwap(L)}
-                  className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/15 flex items-center gap-1"
-                  title="Swap to a different take"
+                  disabled={swapping[L.id]}
+                  className={`text-xs px-2 py-1 rounded flex items-center gap-1 transition-colors ${
+                    swapping[L.id] 
+                      ? 'bg-blue-600 text-white' 
+                      : 'bg-white/10 hover:bg-white/15'
+                  }`}
+                  title={swapping[L.id] ? "Searching for alternative..." : "Swap to a different take"}
                 >
-                  <RefreshCw size={14} />
-                  <span className="sr-only">Swap</span>
+                  <RefreshCw size={14} className={swapping[L.id] ? 'animate-spin' : ''} />
+                  <span className="sr-only">{swapping[L.id] ? "Swapping..." : "Swap"}</span>
                 </button>
 
                 <button

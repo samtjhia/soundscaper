@@ -40,7 +40,7 @@ export function TransportControls({
         <button
           onClick={onPlayAll}
           disabled={!layers.length}
-          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 flex items-center gap-2 font-medium"
+          className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 disabled:opacity-50 flex items-center gap-2 font-medium"
         >
           <Play size={16} />
           Play All
@@ -48,7 +48,7 @@ export function TransportControls({
         <button
           onClick={onStopAll}
           disabled={!layers.length}
-          className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 flex items-center gap-2 font-medium"
+          className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 flex items-center gap-2 font-medium"
         >
           <Square size={16} />
           Stop All
@@ -56,7 +56,7 @@ export function TransportControls({
         <button
           onClick={onClearAll}
           disabled={!layers.length}
-          className="px-4 py-2 rounded-xl bg-red-700 hover:bg-red-600 disabled:opacity-50 flex items-center gap-2 font-medium"
+          className="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 disabled:opacity-50 flex items-center gap-2 font-medium"
         >
           <Trash size={16} />
           Clear All
@@ -117,8 +117,8 @@ export function TransportControls({
             <div 
               className={`h-full transition-all duration-200 ${
                 mixScale < 0.8 ? 'bg-blue-400' : 
-                mixScale > 1.2 ? 'bg-red-400' : 
-                'bg-emerald-400'
+                mixScale > 1.2 ? 'bg-orange-400' : 
+                'bg-teal-400'
               }`}
               style={{ width: `${Math.min(100, mixScale * 50)}%` }}
             />

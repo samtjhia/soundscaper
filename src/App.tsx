@@ -32,6 +32,8 @@ export default function App() {
 
   const [mixScale, setMixScale] = React.useState(1);
   const [rulesScale, setRulesScale] = React.useState(1);
+  const [swapping, setSwapping] = React.useState<Record<string, boolean>>({});
+  const [fullscreenImage, setFullscreenImage] = React.useState<boolean>(false);
 
   // Audio management with custom hook
   const { layerAudioRefs } = useAudio(layers, volumes, mutes, mixScale);
@@ -619,6 +621,18 @@ export default function App() {
     };
   }, [layers]);
 
+  // Handle escape key for fullscreen image
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && fullscreenImage) {
+        setFullscreenImage(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [fullscreenImage]);
+
 
   const handlePlayAll = () => {
     if (layers.length === 0) return;
@@ -705,6 +719,10 @@ export default function App() {
     const tag = L.tag;
     const currentPrompt = prompt || '';
 
+    // Set swapping state and add message
+    setSwapping(prev => ({ ...prev, [L.id]: true }));
+    addMessage('info', `Searching for alternative audio for "${tag}"...`);
+
     console.log(`[swap] Finding intelligent alternative for tag "${tag}" in context: "${currentPrompt}"`);
 
     // Do a fresh search to get current candidates
@@ -733,10 +751,14 @@ export default function App() {
           }
         } catch (e) {
           console.warn(`[swap] whitelist fetch failed for ${tag} id=${wid}`, e);
+          setSwapping(prev => ({ ...prev, [L.id]: false }));
+          addMessage('warning', `Failed to find alternative for "${tag}"`);
           return;
         }
       } else {
         console.warn(`[swap] no search results and no whitelist for tag=${tag}`);
+        setSwapping(prev => ({ ...prev, [L.id]: false }));
+        addMessage('warning', `No alternative audio available for "${tag}"`);
         return;
       }
     }
@@ -758,6 +780,8 @@ export default function App() {
 
     if (allCandidates.length === 0) {
       console.warn(`[swap] no alternatives found for tag=${tag} (excluding current item)`);
+      setSwapping(prev => ({ ...prev, [L.id]: false }));
+      addMessage('warning', `No alternative audio found for "${tag}"`);
       return;
     }
 
@@ -817,6 +841,8 @@ export default function App() {
 
     if (!nextItem) {
       console.warn(`[swap] no usable alternatives found for tag=${tag} (checked ${scoredCandidates.length} options)`);
+      setSwapping(prev => ({ ...prev, [L.id]: false }));
+      addMessage('warning', `No playable alternatives found for "${tag}"`);
       return;
     }
 
@@ -900,6 +926,7 @@ export default function App() {
           addMessage('success', `Swapped to alternative for "${L.tag}"`);
           // Don't auto-play after swap - let user manually start playback
           setIsLoading(prev => ({ ...prev, [L.id]: false }));
+          setSwapping(prev => ({ ...prev, [L.id]: false }));
           swappingRef.current.delete(L.id);
           resolve();
         };
@@ -907,6 +934,7 @@ export default function App() {
         const onLoadError = () => {
           addMessage('warning', `Failed to load alternative for "${L.tag}"`);
           setIsLoading(prev => ({ ...prev, [L.id]: false }));
+          setSwapping(prev => ({ ...prev, [L.id]: false }));
           swappingRef.current.delete(L.id);
           resolve();
         };
@@ -1058,8 +1086,8 @@ export default function App() {
           <div className="space-y-8">
             {/* Logo and Prompt Section */}
             <div className="text-center space-y-4">
-              <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 bg-clip-text text-transparent tracking-tight">
-                SoundSketch
+              <h1 className="text-5xl font-black italic bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 bg-clip-text text-transparent tracking-wide drop-shadow-lg transform hover:scale-105 transition-transform duration-300 select-none">
+                Soundscaper
               </h1>
 
               <div>
@@ -1128,6 +1156,7 @@ export default function App() {
                   volumes={volumes}
                   mutes={mutes}
                   isLoading={isLoading}
+                  swapping={swapping}
                   mixScale={mixScale}
                   layerAudioRefs={layerAudioRefs}
                   onVolumeChange={(layerId, value) => setVolumes(prev => ({ ...prev, [layerId]: value }))}
@@ -1205,17 +1234,32 @@ export default function App() {
                       <img 
                         src={generatedImage.url} 
                         alt="Generated visualization"
-                        className="w-full aspect-video object-cover rounded shadow-md"
+                        className="w-full aspect-video object-cover rounded shadow-md cursor-pointer"
+                        onClick={() => setFullscreenImage(true)}
                       />
                     </div>
-                    {/* Regenerate button overlay */}
-                    <button
-                      onClick={() => generateImage(prompt)}
-                      disabled={imageLoading || !aiService.isLLMEnabled()}
-                      className="absolute top-4 right-4 px-3 py-2 bg-black/70 hover:bg-black/90 disabled:opacity-50 rounded-md transition-all duration-200 backdrop-blur-sm border border-gray-500 text-white text-sm font-medium opacity-0 group-hover:opacity-100"
-                    >
-                      🔄 Regenerate
-                    </button>
+                    {/* Button overlays */}
+                    <div className="absolute bottom-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                      <button
+                        onClick={() => setFullscreenImage(true)}
+                        className="p-2 bg-black/70 hover:bg-black/90 rounded-md transition-all duration-200 backdrop-blur-sm border border-gray-500 text-white"
+                        title="View fullscreen"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => generateImage(prompt)}
+                        disabled={imageLoading || !aiService.isLLMEnabled()}
+                        className="p-2 bg-black/70 hover:bg-black/90 disabled:opacity-50 rounded-md transition-all duration-200 backdrop-blur-sm border border-gray-500 text-white"
+                        title="Regenerate image"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                 ) : layers.length > 0 ? (
                   <div className="relative">
@@ -1301,6 +1345,32 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {/* Fullscreen image modal */}
+      {fullscreenImage && generatedImage && (
+        <div 
+          className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setFullscreenImage(false)}
+        >
+          <div className="relative max-w-full max-h-full">
+            <img 
+              src={generatedImage.url} 
+              alt="Generated visualization - Fullscreen"
+              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+            <button
+              onClick={() => setFullscreenImage(false)}
+              className="absolute top-4 right-4 p-2 bg-black/70 hover:bg-black/90 rounded-md transition-all duration-200 backdrop-blur-sm border border-gray-500 text-white"
+              title="Close fullscreen (ESC)"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 
