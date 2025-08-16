@@ -12,7 +12,7 @@ export function hashPromptTags(prompt: string, tags: string[]): string {
   const s = JSON.stringify({ prompt, tags: [...tags].sort() });
   let h = 5381;
   for (let i = 0; i < s.length; i++) {
-    h = ((h << 5) + h) ^ s.charCodeAt(i); // djb2 xor
+    h = ((h << 5) + h) ^ s.charCodeAt(i);
   }
   return "v2:" + (h >>> 0).toString(16);
 }
@@ -31,5 +31,5 @@ export function hashPromptTagsWithGains(
   for (let i = 0; i < s.length; i++) {
     h = ((h << 5) + h) ^ s.charCodeAt(i);
   }
-  return "v3:" + (h >>> 0).toString(16);
+  return "v4:" + (h >>> 0).toString(16);
 }
