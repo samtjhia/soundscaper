@@ -16,3 +16,20 @@ export function hashPromptTags(prompt: string, tags: string[]): string {
   }
   return "v2:" + (h >>> 0).toString(16);
 }
+
+export function hashPromptTagsWithGains(
+  prompt: string,
+  tags: string[],
+  gains: Record<string, number>
+): string {
+  const s = JSON.stringify({
+    prompt,
+    tags: [...tags].sort(),
+    gains,
+  });
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) + h) ^ s.charCodeAt(i);
+  }
+  return "v3:" + (h >>> 0).toString(16);
+}

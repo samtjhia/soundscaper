@@ -58,3 +58,23 @@ export async function clearOldCache(ttlMs: number): Promise<void> {
     tx.onerror = () => reject(tx.error);
   });
 }
+
+export async function clearOldVersions(currentPrefix: string): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.openCursor();
+    req.onsuccess = (e) => {
+      const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
+      if (cursor) {
+        if (!String(cursor.key).startsWith(currentPrefix)) {
+          cursor.delete();
+        }
+        cursor.continue();
+      }
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}

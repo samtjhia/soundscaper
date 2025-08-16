@@ -3,8 +3,8 @@ import { searchOnce } from "./freesound/client";
 import { AUTO_RUN_ON_LOAD, SEARCH_DEFAULT_QUERY, CACHE_TTL_MS } from "./config";
 import type { FSItem, Layer } from "./types";
 import { pickInitialTags, gainForTag } from "./ai/rules";
-import { getCache, setCache, clearOldCache } from "./cache/idb";
-import { hashPromptTags } from "./cache/hash";
+import { getCache, setCache, clearOldCache, clearOldVersions } from "./cache/idb";
+import { hashPromptTagsWithGains } from "./cache/hash";
 
 
 export default function App() {
@@ -32,9 +32,11 @@ export default function App() {
     try {
       const tags = pickInitialTags();
       const prompt = "test-prompt"; //FOR NOW
-      const cacheKey = hashPromptTags(prompt, tags);
+      const gainsMap = Object.fromEntries(tags.map(tag => [tag, gainForTag(tag)]));
+      const cacheKey = hashPromptTagsWithGains(prompt, tags, gainsMap);
 
       clearOldCache(CACHE_TTL_MS).catch(() => { });
+      await clearOldVersions("v3:");
 
       const cached = await getCache<{ byTag: Record<string, any> }>(cacheKey);
       let byTag: Record<string, any> | null = null;
@@ -210,10 +212,10 @@ export default function App() {
         {cacheStatus && (
           <div
             className={`text-xs px-2 py-1 rounded ${cacheStatus === "HIT"
-                ? "bg-emerald-700 text-emerald-100"
-                : cacheStatus === "STALE"
-                  ? "bg-amber-700 text-amber-100"
-                  : "bg-rose-700 text-rose-100"
+              ? "bg-emerald-700 text-emerald-100"
+              : cacheStatus === "STALE"
+                ? "bg-amber-700 text-amber-100"
+                : "bg-rose-700 text-rose-100"
               }`}
           >
             Cache: {cacheStatus}
