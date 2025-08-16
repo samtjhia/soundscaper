@@ -44,6 +44,14 @@ export default function App() {
     reasoning?: string;
   } | null>(null);
 
+  // Image generation state
+  const [generatedImage, setGeneratedImage] = useState<{
+    url: string;
+    prompt: string;
+    revisedPrompt?: string;
+  } | null>(null);
+  const [imageLoading, setImageLoading] = useState(false);
+
   // Message system for user-facing feedback
   const [messages, setMessages] = useState<Array<{
     id: string;
@@ -80,7 +88,7 @@ export default function App() {
     }
   }
 
-  const [prompt, setPrompt] = React.useState<string>(SEARCH_DEFAULT_QUERY || "rural alley dusk light rain");
+  const [prompt, setPrompt] = React.useState<string>("");
 
   function effectiveGain(id: string, base: number) {
     const rel = volumes[id] ?? base;
@@ -141,8 +149,10 @@ export default function App() {
     setError(null);
     setAiAnalysis(null);
     
-    // Clear old messages when starting a new search
+    // Clear old messages and image when starting a new search
     setMessages([]);
+    setGeneratedImage(null);
+    setImageLoading(false);
 
     beginSceneRebuild();
 
@@ -437,11 +447,45 @@ export default function App() {
       setLayers(usable);
       addMessage('success', `Soundscape complete: ${usable.length} layers loaded`);
 
+      // Generate image if we have a successful soundscape and LLM is available
+      if (usable.length > 0 && aiService.isLLMEnabled()) {
+        generateImage(p);
+      }
+
     } catch (e: any) {
       setError(e?.message ?? "Unknown error");
       addMessage('error', 'Failed to generate soundscape');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function generateImage(prompt: string) {
+    if (!aiService.isLLMEnabled()) {
+      addMessage('warning', 'Image generation requires OpenAI API key in environment variables');
+      return;
+    }
+
+    setImageLoading(true);
+    addMessage('info', 'Generating visual representation...');
+
+    try {
+      const result = await aiService.generateImage(prompt);
+      setGeneratedImage({
+        url: result.url,
+        prompt: prompt,
+        revisedPrompt: result.revisedPrompt
+      });
+      addMessage('success', 'Image generated successfully');
+    } catch (error) {
+      console.error('Image generation failed:', error);
+      if (error instanceof Error && error.message.includes('API key')) {
+        addMessage('error', 'Image generation failed: Invalid API key');
+      } else {
+        addMessage('error', 'Image generation failed - check console for details');
+      }
+    } finally {
+      setImageLoading(false);
     }
   }
 
@@ -987,159 +1031,128 @@ export default function App() {
 
   return (
     <main className="min-h-screen bg-gray-950 text-gray-100">
+      <style dangerouslySetInnerHTML={{
+        __html: `
+          @keyframes fadeInUp {
+            from {
+              opacity: 0;
+              transform: translateY(20px);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0);
+            }
+          }
+          .animate-fade-in {
+            animation: fadeInUp 0.6s ease-out forwards;
+          }
+          .animate-fade-in-delay {
+            animation: fadeInUp 0.6s ease-out 0.2s forwards;
+            opacity: 0;
+          }
+        `
+      }} />
       <div className="flex min-h-screen">
-        {/* Left side: Logo, Prompt, Messages */}
-        <div className="w-1/2 p-6 flex flex-col overflow-y-auto">
-          <div className="flex-1 flex flex-col py-8">
+        {/* Left side: Logo, Prompt, Controls */}
+        <div className="w-1/2 p-8 flex flex-col overflow-y-auto">
+          <div className="space-y-8">
             {/* Logo and Prompt Section */}
-            <div className="w-full max-w-lg mx-auto space-y-6 mb-8">
-              <h1 className="text-3xl font-bold tracking-tight text-center">SoundSketch</h1>
-        
-              {aiAnalysis && (
-                <div className="flex items-center justify-center gap-3 mb-4">
-                  <div className="text-xs text-gray-400" title={aiAnalysis.reasoning || 'AI analysis complete'}>
-                    AI: {aiAnalysis.source.toUpperCase()}
-                  </div>
-                  {aiService.isLLMEnabled() && (
-                    <div className="text-xs text-green-400">
-                      LLM Ready
-                    </div>
-                  )}
-                  {cacheStatus && (
-                    <div className={`text-xs ${cacheStatus === "HIT"
-                      ? "text-emerald-400"
-                      : cacheStatus === "STALE"
-                        ? "text-amber-400"
-                        : "text-rose-400"
-                      }`}
-                    >
-                      Cache: {cacheStatus}
-                    </div>
-                  )}
-                </div>
-              )}
+            <div className="text-center space-y-4">
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 bg-clip-text text-transparent tracking-tight">
+                SoundSketch
+              </h1>
 
               <div>
-                <label className="block text-base font-medium text-gray-200 mb-3 text-center">
+                <label className="block text-base font-medium text-gray-200 mb-4">
                   Describe your soundscape
                 </label>
-                <div className="flex items-center justify-center gap-2">
+                <div className="flex items-center gap-2">
                   <input
-                    className="flex-1 rounded-lg bg-gray-900/50 border border-gray-600 px-4 py-3 text-sm placeholder-gray-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-                    placeholder='e.g., "quiet neon city at night with light rain"'
+                    className="flex-1 rounded-lg bg-gray-900/50 border border-gray-600 px-4 py-3 text-sm placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    placeholder='e.g., "A walk through the forest at night"'
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
                   />
                   <button
                     onClick={() => runSearch(prompt)}
                     disabled={loading}
-                    className="px-4 py-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm font-medium transition-colors"
+                    className="px-4 py-3 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-sm font-medium transition-colors"
                   >
                     {loading ? "Generating…" : "Generate"}
                   </button>
                 </div>
-                <p className="text-xs text-gray-500 mt-2 text-center">
-                  Try: <em>quiet neon city night drizzle</em> or <em>rural alley dusk light rain</em>
+                <p className="text-xs text-gray-500 mt-3">
+                  Try: <em>empty subway station at dawn</em> or <em>cozy cabin during a thunderstorm</em>
                 </p>
               </div>
 
               {error && (
-                <div className="text-red-400 text-sm text-center py-2 px-4 bg-red-900/20 rounded-lg border border-red-800/30">
+                <div className="text-orange-400 text-sm py-2 px-4 bg-orange-900/20 rounded-lg border border-orange-800/30 animate-fade-in">
                   {error}
                 </div>
               )}
             </div>
 
-            {/* Messages Section */}
-            <div className="flex-1 w-full max-w-lg mx-auto">
-              <h3 className="text-sm font-medium text-gray-400 mb-3">Process</h3>
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {messages.length === 0 ? (
-                  <div className="text-xs text-gray-500 italic">
-                    Messages will appear here during generation...
-                  </div>
-                ) : (
-                  messages.map((msg) => (
-                    <div key={msg.id} className="flex items-start gap-2 text-xs">
-                      <div className="w-1 h-1 rounded-full mt-1.5 flex-shrink-0"
-                           style={{
-                             backgroundColor: 
-                               msg.type === 'success' ? '#10b981' :
-                               msg.type === 'error' ? '#ef4444' :
-                               msg.type === 'warning' ? '#f59e0b' :
-                               '#6b7280'
-                           }}
-                      />
-                      <div className={`flex-1 ${
-                        msg.type === 'success' ? 'text-green-400' :
-                        msg.type === 'error' ? 'text-red-400' :
-                        msg.type === 'warning' ? 'text-yellow-400' :
-                        'text-gray-400'
-                      }`}>
-                        {msg.text}
-                      </div>
-                      <div className="text-gray-500 text-xs">
-                        {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}
-                      </div>
-                    </div>
-                  ))
-                )}
+            {/* Transport Controls */}
+            {layers.length > 0 && (
+              <div className="animate-fade-in">
+                <TransportControls
+                  layers={layers}
+                  loading={loading}
+                  clearing={clearing}
+                  mixScale={mixScale}
+                  rulesScale={rulesScale}
+                  devMode={DEV_MODE}
+                  onPlayAll={handlePlayAll}
+                  onStopAll={handleStopAll}
+                  onClearAll={handleClearAll}
+                  onClearCache={handleClearCache}
+                  onSeedWhitelist={() => seedWhitelistCache(2)}
+                  onNudgeMix={nudgeMix}
+                  onApplyGlobalScale={applyGlobalScale}
+                />
               </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Right side: Controls and Sliders */}
-        <div className="w-1/2 p-6 flex flex-col border-l border-gray-800 min-h-screen">
-          <div className="space-y-6">
-            <TransportControls
-              layers={layers}
-              loading={loading}
-              clearing={clearing}
-              mixScale={mixScale}
-              rulesScale={rulesScale}
-              devMode={DEV_MODE}
-              onPlayAll={handlePlayAll}
-              onStopAll={handleStopAll}
-              onClearAll={handleClearAll}
-              onClearCache={handleClearCache}
-              onSeedWhitelist={() => seedWhitelistCache(2)}
-              onNudgeMix={nudgeMix}
-              onApplyGlobalScale={applyGlobalScale}
-            />
+            )}
 
             {DEV_MODE && (
-              <p className="text-xs text-yellow-400/70 text-center">
+              <p className="text-xs text-purple-400/70 text-center">
                 Dev mode active - extra controls enabled
               </p>
             )}
 
-            <LayerList
-              layers={layers}
-              volumes={volumes}
-              mutes={mutes}
-              isLoading={isLoading}
-              mixScale={mixScale}
-              layerAudioRefs={layerAudioRefs}
-              onVolumeChange={(layerId, value) => setVolumes(prev => ({ ...prev, [layerId]: value }))}
-              onMuteToggle={(layerId) => 
-                setMutes(prev => {
-                  const next = { ...prev, [layerId]: !prev[layerId] };
-                  const a = layerAudioRefs.current[layerId];
-                  if (a) a.muted = next[layerId];
-                  return next;
-                })
-              }
-              onSwap={handleSwap}
-              onDelete={handleDeleteLayer}
-            />
+            {/* Layer List */}
+            {layers.length > 0 && (
+              <div className="animate-fade-in">
+                <LayerList
+                  layers={layers}
+                  volumes={volumes}
+                  mutes={mutes}
+                  isLoading={isLoading}
+                  mixScale={mixScale}
+                  layerAudioRefs={layerAudioRefs}
+                  onVolumeChange={(layerId, value) => setVolumes(prev => ({ ...prev, [layerId]: value }))}
+                  onMuteToggle={(layerId) => 
+                    setMutes(prev => {
+                      const next = { ...prev, [layerId]: !prev[layerId] };
+                      const a = layerAudioRefs.current[layerId];
+                      if (a) a.muted = next[layerId];
+                      return next;
+                    })
+                  }
+                  onSwap={handleSwap}
+                  onDelete={handleDeleteLayer}
+                />
+              </div>
+            )}
 
             {layers.length > 0 && (
-              <AddLayer
-                prompt={prompt}
-                loading={loading}
-                onAddLayer={handleAddLayer}
-              />
+              <div className="animate-fade-in">
+                <AddLayer
+                  prompt={prompt}
+                  loading={loading}
+                  onAddLayer={handleAddLayer}
+                />
+              </div>
             )}
           </div>
 
@@ -1169,6 +1182,122 @@ export default function App() {
                 />
               );
             })}
+          </div>
+        </div>
+
+        {/* Right side: Image and Messages */}
+        <div className="w-1/2 p-8 flex flex-col border-l border-gray-800 min-h-screen">
+          <div className="space-y-8 flex-1">
+            {/* Generated Image Section */}
+            {(generatedImage || imageLoading || layers.length > 0) && (
+              <div className="relative animate-fade-in">
+                {imageLoading ? (
+                  <div className="aspect-video bg-gray-900 border-2 border-gray-700 rounded-lg flex items-center justify-center shadow-lg">
+                    <div className="text-center">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-2"></div>
+                      <div className="text-gray-400 text-sm">Generating image...</div>
+                    </div>
+                  </div>
+                ) : generatedImage ? (
+                  <div className="relative group animate-fade-in">
+                    {/* Frame effect with padding and border */}
+                    <div className="bg-gray-800 p-4 rounded-lg shadow-xl border border-gray-600">
+                      <img 
+                        src={generatedImage.url} 
+                        alt="Generated visualization"
+                        className="w-full aspect-video object-cover rounded shadow-md"
+                      />
+                    </div>
+                    {/* Regenerate button overlay */}
+                    <button
+                      onClick={() => generateImage(prompt)}
+                      disabled={imageLoading || !aiService.isLLMEnabled()}
+                      className="absolute top-4 right-4 px-3 py-2 bg-black/70 hover:bg-black/90 disabled:opacity-50 rounded-md transition-all duration-200 backdrop-blur-sm border border-gray-500 text-white text-sm font-medium opacity-0 group-hover:opacity-100"
+                    >
+                      🔄 Regenerate
+                    </button>
+                  </div>
+                ) : layers.length > 0 ? (
+                  <div className="relative">
+                    <div className="aspect-video bg-gray-900 border-2 border-gray-700 rounded-lg flex items-center justify-center shadow-lg border-dashed">
+                      <div className="text-center text-gray-500">
+                        <div className="text-4xl mb-2">🎨</div>
+                        <div className="text-sm">Click Generate to create a visual</div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => generateImage(prompt)}
+                      disabled={imageLoading || !aiService.isLLMEnabled()}
+                      className="absolute top-4 right-4 px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-md transition-colors text-white text-sm font-medium"
+                    >
+                      🎨 Generate
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            )}
+
+            {/* Messages Section */}
+            <div className="flex-1">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-medium text-gray-400">Process</h3>
+                {aiAnalysis && (
+                  <div className="flex items-center gap-3 animate-fade-in">
+                    <div className="text-xs text-gray-400" title={aiAnalysis.reasoning || 'AI analysis complete'}>
+                      AI: {aiAnalysis.source.toUpperCase()}
+                    </div>
+                    {aiService.isLLMEnabled() && (
+                      <div className="text-xs text-teal-400">
+                        LLM Ready
+                      </div>
+                    )}
+                    {cacheStatus && (
+                      <div className={`text-xs ${cacheStatus === "HIT"
+                        ? "text-teal-400"
+                        : cacheStatus === "STALE"
+                          ? "text-orange-400"
+                          : "text-purple-400"
+                        }`}
+                      >
+                        Cache: {cacheStatus}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {messages.length === 0 ? (
+                  <div className="text-xs text-gray-500 italic">
+                    Messages will appear here during generation...
+                  </div>
+                ) : (
+                  messages.map((msg) => (
+                    <div key={msg.id} className="flex items-start gap-2 text-xs animate-fade-in">
+                      <div className="w-1 h-1 rounded-full mt-1.5 flex-shrink-0"
+                           style={{
+                             backgroundColor: 
+                               msg.type === 'success' ? '#2dd4bf' :
+                               msg.type === 'error' ? '#fb923c' :
+                               msg.type === 'warning' ? '#a855f7' :
+                               '#6b7280'
+                           }}
+                      />
+                      <div className={`flex-1 ${
+                        msg.type === 'success' ? 'text-teal-400' :
+                        msg.type === 'error' ? 'text-orange-400' :
+                        msg.type === 'warning' ? 'text-purple-400' :
+                        'text-gray-400'
+                      }`}>
+                        {msg.text}
+                      </div>
+                      <div className="text-gray-500 text-xs">
+                        {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>

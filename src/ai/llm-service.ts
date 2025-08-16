@@ -221,4 +221,40 @@ Return only a comma-separated list of single-word tags that field recording arti
       throw error;
     }
   }
+
+  async generateImage(prompt: string): Promise<{ url: string; revisedPrompt?: string }> {
+    try {
+      console.log('[LLM] Generating image for prompt:', prompt);
+      
+      const response = await this.client.images.generate({
+        model: "dall-e-3",
+        prompt: prompt,
+        size: "1792x1024", // Landscape format
+        quality: "standard", // Use standard quality (cheaper than "hd")
+        n: 1,
+      });
+
+      if (!response.data || response.data.length === 0) {
+        throw new Error('No image data returned from DALL-E');
+      }
+
+      const imageUrl = response.data[0]?.url;
+      const revisedPrompt = response.data[0]?.revised_prompt;
+
+      if (!imageUrl) {
+        throw new Error('No image URL returned from DALL-E');
+      }
+
+      console.log('[LLM] Image generated successfully');
+      
+      return {
+        url: imageUrl,
+        revisedPrompt: revisedPrompt
+      };
+      
+    } catch (error) {
+      console.error('[LLM] Image generation failed:', error);
+      throw new Error(`Image generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
 }
