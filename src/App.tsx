@@ -23,6 +23,10 @@ export default function App() {
   const [cacheStatus, setCacheStatus] = useState<string | null>(null);
   const [clearing, setClearing] = useState(false);
 
+  const alternatesRef = React.useRef<Record<string, FSItem[]>>({});
+  const altIndexRef = React.useRef<Record<string, number>>({});
+
+
   async function handleClearCache() {
     try {
       setClearing(true);
@@ -225,6 +229,9 @@ export default function App() {
             return null;
           }
 
+          alternatesRef.current[tag] = rows.filter(r => r.id !== item.id);
+          altIndexRef.current[tag] = 0;
+
           const base = gainForTag(tag);
           const layer: Layer = {
             id: `${tag}-${item.id}`,
@@ -370,6 +377,70 @@ export default function App() {
       runSearch();
     }
   }, []);
+
+  async function handleSwap(L: Layer) {
+    const tag = L.tag;
+
+    let list = alternatesRef.current[tag] ?? [];
+
+    if (list.length === 0) {
+      const wid = pickWhitelist(tag);
+      if (wid != null) {
+        const wlKey = `${FETCH_VERSION}:${WL_CACHE_PREFIX}${wid}`;
+        try {
+          const cached = await getCache<any>(wlKey);
+          if (cached?.data) {
+            list = [cached.data as FSItem];
+          } else {
+            const item = await getById(wid);
+            await setCache(wlKey, item);
+            list = [item];
+          }
+          alternatesRef.current[tag] = list;
+          altIndexRef.current[tag] = 0;
+        } catch (e) {
+          console.warn(`[swap] whitelist fetch failed for ${tag} id=${wid}`, e);
+          return;
+        }
+      } else {
+        console.warn(`[swap] no alternates and no whitelist for tag=${tag}`);
+        return;
+      }
+    }
+
+    const idx = (altIndexRef.current[tag] ?? 0) % list.length;
+    const nextItem = list[idx];
+    altIndexRef.current[tag] = (idx + 1) % list.length;
+
+    setLayers(prev =>
+      prev.map(x =>
+        x.id === L.id
+          ? { ...x, item: nextItem, link: `https://freesound.org/s/${nextItem.id}/` }
+          : x
+      )
+    );
+
+    const a = layerAudioRefs.current[L.id];
+    const nextSrc = selectPreviewUrl(nextItem);
+    if (!a || !nextSrc) return;
+
+    const wasPlaying = !a.paused;
+    const targetVol = effectiveGain(L.id, L.gain);
+
+    try { a.pause(); } catch { }
+    a.src = nextSrc;
+    try { a.load(); } catch { }
+
+    a.loop = true;
+    a.volume = targetVol;
+    a.muted = !!mutes[L.id];
+
+    if (wasPlaying) {
+      a.currentTime = 0;
+      a.play().catch(err => console.warn("swap play failed", L.id, err));
+    }
+  }
+
 
 
   return (
@@ -520,6 +591,15 @@ export default function App() {
                       >
                         {mutes[L.id] ? "Unmute" : "Mute"}
                       </button>
+
+                      <button
+                        onClick={() => handleSwap(L)}
+                        className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/15"
+                        title="Swap to a different take"
+                      >
+                        Swap
+                      </button>
+
 
                       <div className="text-xs text-gray-300 tabular-nums w-16 text-right">
                         {(v * 100).toFixed(0)}%
