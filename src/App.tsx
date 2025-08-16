@@ -6,6 +6,16 @@ import { gainForTag } from "./ai/rules";
 import { aiService } from "./ai/ai-service";
 import { getCache, setCache, clearOldCache, clearOldVersions, clearAllCache } from "./cache/idb";
 import { allWhitelist, pickWhitelist, WL_CACHE_PREFIX } from "./freesound/whitelist";
+import { useLayers } from './hooks/use-layers';
+import { useAudio } from './hooks/use-audio';
+import { TransportControls } from './components/transport-controls';
+import { LayerList } from './components/layer-list';
+import { AddLayer } from './components/add-layer';
+import { 
+  clamp01, 
+  hasUsablePreview, 
+  withTimeout
+} from './audio/audio-manager';
 
 
 
@@ -13,12 +23,18 @@ export default function App() {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const [layers, setLayers] = useState<Layer[]>([]);
+  // Layer management with custom hook
+  const {
+    layers, volumes, mutes, isLoading,
+    setLayers, setVolumes, setMutes, setIsLoading,
+    alternatesRef, altIndexRef, swappingRef
+  } = useLayers();
 
-  const layerAudioRefs = React.useRef<Record<string, HTMLAudioElement | null>>({});
-  const [volumes, setVolumes] = useState<Record<string, number>>({});
-  const [mutes, setMutes] = useState<Record<string, boolean>>({});
-  const [isLoading, setIsLoading] = useState<Record<string, boolean>>({});
+  const [mixScale, setMixScale] = React.useState(1);
+  const [rulesScale, setRulesScale] = React.useState(1);
+
+  // Audio management with custom hook
+  const { layerAudioRefs } = useAudio(layers, volumes, mutes, mixScale);
 
   const [cacheStatus, setCacheStatus] = useState<string | null>(null);
   const [clearing, setClearing] = useState(false);
@@ -27,11 +43,6 @@ export default function App() {
     confidence: number;
     reasoning?: string;
   } | null>(null);
-
-  const alternatesRef = React.useRef<Record<string, FSItem[]>>({});
-  const altIndexRef = React.useRef<Record<string, number>>({});
-
-  const swappingRef = React.useRef<Set<string>>(new Set());
 
 
 
@@ -47,26 +58,10 @@ export default function App() {
   }
 
   const [prompt, setPrompt] = React.useState<string>(SEARCH_DEFAULT_QUERY || "rural alley dusk light rain");
-  function clamp01(x: number) {
-    return Math.max(0, Math.min(1, x));
-  }
 
   function effectiveGain(id: string, base: number) {
     const rel = volumes[id] ?? base;
     return clamp01(rel * mixScale);
-  }
-
-  const [mixScale, setMixScale] = React.useState(1);
-  const [rulesScale, setRulesScale] = React.useState(1);
-
-  function hasUsablePreview(item?: FSItem | null): boolean {
-    if (!item?.previews) return false;
-    return Boolean(
-      item.previews["preview-lq-mp3"] ||
-      item.previews["preview-hq-mp3"] ||
-      item.previews["preview-hq-ogg"] ||
-      item.previews["preview-lq-ogg"]
-    );
   }
 
   function selectPreviewUrl(item?: FSItem | null): string | null {
@@ -93,16 +88,6 @@ export default function App() {
     setMutes({});
     setVolumes({});
     setLayers([]);
-  }
-
-  function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
-    return new Promise((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error("timeout")), ms);
-      p.then(
-        (v) => { clearTimeout(t); resolve(v); },
-        (e) => { clearTimeout(t); reject(e); }
-      );
-    });
   }
 
   async function seedWhitelistCache(maxPerTag = 2) {
@@ -863,6 +848,104 @@ export default function App() {
     });
   }
 
+  function handleDeleteLayer(layerId: string) {
+    // Stop and cleanup audio
+    const audio = layerAudioRefs.current[layerId];
+    if (audio) {
+      audio.pause();
+      audio.src = '';
+      delete layerAudioRefs.current[layerId];
+    }
+
+    // remove from all state
+    setLayers(prev => prev.filter(L => L.id !== layerId));
+    setVolumes(prev => {
+      const next = { ...prev };
+      delete next[layerId];
+      return next;
+    });
+    setMutes(prev => {
+      const next = { ...prev };
+      delete next[layerId];
+      return next;
+    });
+    setIsLoading(prev => {
+      const next = { ...prev };
+      delete next[layerId];
+      return next;
+    });
+
+    // cleanup swap state
+    swappingRef.current.delete(layerId);
+    delete alternatesRef.current[layerId];
+    delete altIndexRef.current[layerId];
+
+    console.log(`[delete] Removed layer: ${layerId}`);
+  }
+
+  async function handleAddLayer(tag: string) {
+    if (!tag.trim() || !prompt.trim()) return;
+    
+    console.log(`[add] Adding layer for tag: "${tag}" in context: "${prompt}"`);
+    setLoading(true);
+    setError(null);
+
+    try {
+      const data = await withTimeout(searchOnce(tag), 10_000);
+      const results = data.results || [];
+      
+      if (results.length === 0) {
+        throw new Error(`No results found for tag: "${tag}"`);
+      }
+
+      const usable = results.filter((r: FSItem) => r && hasUsablePreview(r));
+      if (usable.length === 0) {
+        throw new Error(`No usable audio found for tag: "${tag}"`);
+      }
+
+      let contextualGain = gainForTag(tag);
+      
+      if (aiAnalysis?.source === 'llm' && mixScale) {
+        contextualGain = gainForTag(tag) * mixScale;
+      }
+
+      const scored = usable
+        .map((r: FSItem) => ({
+          item: r,
+          score: Math.random() * 0.1 +
+            (r.rating || 0) * 0.3 +
+            Math.log10((r.num_downloads || 0) + 1) * 0.2 +
+            (r.duration && r.duration <= 120 ? 0.4 : 
+             r.duration && r.duration <= 300 ? 0.2 : 0.1)
+        }))
+        .sort((a, b) => b.score - a.score);
+
+      const best = scored[0].item;
+      const layerId = `add-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      
+      const newLayer: Layer = {
+        id: layerId,
+        tag: tag.trim(),
+        item: best,
+        gain: Math.max(0.1, Math.min(0.6, contextualGain)),
+        link: `https://freesound.org/people/${best.username}/sounds/${best.id}/`
+      };
+
+      setLayers(prev => [...prev, newLayer]);
+      
+      alternatesRef.current[layerId] = scored.slice(1, 10).map(s => s.item);
+      altIndexRef.current[layerId] = 0;
+
+      console.log(`[add] Successfully added layer: ${tag} (${best.name}) with contextual gain: ${contextualGain.toFixed(2)}`);
+
+    } catch (err) {
+      console.error(`[add] Failed to add layer for "${tag}":`, err);
+      setError(`Failed to add "${tag}": ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
 
 
 
@@ -942,65 +1025,21 @@ export default function App() {
           >
             {loading ? "Searching..." : "Test Freesound"}
           </button>
-
-          <button
-            onClick={handlePlayAll}
-            disabled={!layers.length}
-            className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50"
-          >
-            Play All
-          </button>
-          <button
-            onClick={handleStopAll}
-            disabled={!layers.length}
-            className="px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50"
-          >
-            Stop All
-          </button>
-          <button
-            onClick={handleClearCache}
-            className="px-3 py-2 rounded-xl bg-yellow-700 hover:bg-yellow-600 disabled:opacity-50"
-            disabled={clearing}
-            title="Clear all cached search JSON"
-          >
-            {clearing ? "Clearing…" : "Clear Cache"}
-          </button>
-          <button
-            onClick={() => seedWhitelistCache(2)}
-            className="px-3 py-2 rounded-xl bg-sky-700 hover:bg-sky-600"
-            title="Fetch and cache wl:<id> items so fallback can work offline"
-          >
-            Seed Whitelist
-          </button>
-
         </div>
 
-        <div className="flex items-center justify-center gap-2 mt-2 text-xs">
-          <span className="opacity-70">Mix:</span>
-          <button
-            className="rounded-md px-2 py-1 bg-white/10 hover:bg-white/15"
-            onClick={() => nudgeMix(0.9)}
-            disabled={loading || layers.length === 0}
-          >
-            Calmer −10%
-          </button>
-          <button
-            className="rounded-md px-2 py-1 bg-white/10 hover:bg-white/15"
-            onClick={() => nudgeMix(1.1)}
-            disabled={loading || layers.length === 0}
-          >
-            Busier +10%
-          </button>
-          <button
-            className="rounded-md px-2 py-1 bg-white/10 hover:bg-white/15"
-            onClick={() => applyGlobalScale(rulesScale)}
-            disabled={loading || layers.length === 0}
-            title="Reset to the rules-suggested intensity for this prompt"
-          >
-            Reset
-          </button>
-          <span className="opacity-60 ml-1">scale: {mixScale.toFixed(2)}</span>
-        </div>
+        <TransportControls
+          layers={layers}
+          loading={loading}
+          clearing={clearing}
+          mixScale={mixScale}
+          rulesScale={rulesScale}
+          onPlayAll={handlePlayAll}
+          onStopAll={handleStopAll}
+          onClearCache={handleClearCache}
+          onSeedWhitelist={() => seedWhitelistCache(2)}
+          onNudgeMix={nudgeMix}
+          onApplyGlobalScale={applyGlobalScale}
+        />
 
         {error && <p className="text-red-400 text-sm">{error}</p>}
 
@@ -1008,99 +1047,32 @@ export default function App() {
           Tip: add <code>?auto=1</code> to the URL to auto-run on page load.
         </p>
 
-        {layers.length > 0 ? (
-          <div className="mt-4 grid gap-3 text-left w-full">
-            {layers.map((L) => {
-              const sliderValue = volumes[L.id] ?? L.gain; // raw slider value (0-1)
-              return (
-                <div key={L.id} className="rounded-xl bg-white/5 p-3 w-full min-w-0">
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm font-semibold text-gray-100 flex items-center gap-2">
-                      {L.tag}
-                      {isLoading[L.id] && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-gray-300">
-                          loading…
-                        </span>
-                      )}
-                    </div>
+        <LayerList
+          layers={layers}
+          volumes={volumes}
+          mutes={mutes}
+          isLoading={isLoading}
+          mixScale={mixScale}
+          layerAudioRefs={layerAudioRefs}
+          onVolumeChange={(layerId, value) => setVolumes(prev => ({ ...prev, [layerId]: value }))}
+          onMuteToggle={(layerId) => 
+            setMutes(prev => {
+              const next = { ...prev, [layerId]: !prev[layerId] };
+              const a = layerAudioRefs.current[layerId];
+              if (a) a.muted = next[layerId];
+              return next;
+            })
+          }
+          onSwap={handleSwap}
+          onDelete={handleDeleteLayer}
+        />
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() =>
-                          setMutes(prev => {
-                            const next = { ...prev, [L.id]: !prev[L.id] };
-                            const a = layerAudioRefs.current[L.id];
-                            if (a) a.muted = next[L.id];
-                            return next;
-                          })
-                        }
-                        className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/15"
-                        aria-pressed={mutes[L.id] ? "true" : "false"}
-                        title={mutes[L.id] ? "Unmute" : "Mute"}
-                      >
-                        {mutes[L.id] ? "Unmute" : "Mute"}
-                      </button>
-
-                      <button
-                        onClick={() => handleSwap(L)}
-                        className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/15"
-                        title="Swap to a different take"
-                      >
-                        Swap
-                      </button>
-
-
-                      <div className="text-xs text-gray-300 tabular-nums w-16 text-right">
-                        {(sliderValue * 100).toFixed(0)}%
-                      </div>
-                    </div>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    value={sliderValue}
-                    onChange={(e) => {
-                      const newSliderValue = parseFloat(e.target.value);
-                      setVolumes((prev) => ({ ...prev, [L.id]: newSliderValue }));
-                      const a = layerAudioRefs.current[L.id];
-                      if (a) a.volume = clamp01(newSliderValue * mixScale);
-                    }}
-
-                    disabled={!!isLoading[L.id]}
-                    className="w-full mt-2 accent-emerald-400 disabled:opacity-50"
-                    aria-label={`${L.tag} volume`}
-                  />
-                  <div className="mt-2 text-xs text-gray-300 min-w-0">
-                    <div className="opacity-90 truncate">
-                      {L.item?.name} — by {L.item?.username}
-                    </div>
-                    <div className="opacity-70 truncate">
-                      {L.item?.license}
-                      {L.link ? (
-                        <>
-                          {" • "}
-                          <a
-                            className="underline"
-                            href={L.link}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            link
-                          </a>
-                        </>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="text-xs text-gray-400 mt-3">
-            No layers yet. Click <em>Test Freesound</em> to build layers.
-          </p>
+        {layers.length > 0 && (
+          <AddLayer
+            prompt={prompt}
+            loading={loading}
+            onAddLayer={handleAddLayer}
+          />
         )}
 
         <div className="sr-only">
