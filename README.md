@@ -2,6 +2,12 @@
 
 **Create immersive soundscapes with AI-powered audio and visual generation**
 
+## Why I Built This
+
+I created Soundscaper because I noticed I get easily distracted when studying or reading in quiet environments. I realized that when I was in different places - like a coffee shop, library, or outdoors - I could concentrate much better and felt more relaxed and focused. The ambient sounds of these environments seemed to help my mind settle into a productive state.
+
+This tool tackles that challenge by letting you immerse yourself with your senses into any environment you can imagine. Unlike other ambient sound apps that give you a few preset options, Soundscaper gives you complete control over your sound environment - you can describe any scene and have AI curate the perfect soundscape for your needs.
+
 Soundscaper is a web application that transforms text descriptions into multi-layered audio experiences paired with AI-generated visuals. Describe a scene and it generates appropriate sounds and imagery.
 
 ![Soundscaper Preview](public/soundscaper-icon.svg)
@@ -12,6 +18,7 @@ Soundscaper is a web application that transforms text descriptions into multi-la
 - **AI-Powered Sound Selection**: Uses OpenAI's GPT models to select appropriate sounds for any scene
 - **Multi-Layer Audio**: Creates soundscapes by layering multiple audio sources
 - **Freesound Integration**: Access to thousands of royalty-free sounds from Freesound.org
+- **Smart Caching**: Audio files are cached locally to reduce API calls and improve performance
 - **Smart Fallback System**: Includes a minimal whitelist for testing purposes when Freesound API is unavailable
 - **Audio Management**: Automatic volume balancing and audio mixing
 
@@ -79,6 +86,7 @@ Soundscaper is a web application that transforms text descriptions into multi-la
 **Freesound API Key** (Required):
 - Provides access to the full Freesound.org library of community sounds
 - **Rate Limits**: Free tier allows limited requests per day
+- **Caching System**: Audio files are automatically cached locally using IndexedDB to minimize API usage and improve performance
 - **Fallback System**: A minimal whitelist exists for testing purposes, but the Freesound API is essential for creating quality soundscapes
 - **Get Your Key**: Obtain a free Freesound API key at [freesound.org/apiv2/apply](https://freesound.org/apiv2/apply)
 
@@ -101,8 +109,8 @@ Soundscaper is a web application that transforms text descriptions into multi-la
 - **Freesound API** - Access to community-contributed audio samples
 
 ### Audio Management
-- **Web Audio API** - Browser audio processing and playback
-- **IndexedDB Caching** - Audio file caching for improved performance
+- **HTML Audio Elements** - Browser audio playback using standard audio elements
+- **IndexedDB Caching** - Audio file caching to reduce API calls and improve performance
 - **Audio Layering** - Multi-track audio mixing
 
 ## Project Structure
@@ -119,7 +127,7 @@ soundscaper/
 │   │   └── audio-manager.ts   # Audio playback and mixing
 │   ├── cache/                 # Performance optimization
 │   │   ├── hash.ts            # Content hashing utilities
-│   │   └── idb.ts             # IndexedDB caching layer
+│   │   └── idb.ts             # IndexedDB caching layer for reducing API calls
 │   ├── components/            # React components
 │   │   ├── add-layer.tsx      # Audio layer addition interface
 │   │   ├── layer-list.tsx     # Audio layer management
@@ -164,10 +172,9 @@ soundscaper/
 ### Example Prompts
 
 - `"Empty subway station at dawn"`
-- `"Bustling coffee shop on a rainy afternoon"`
-- `"Peaceful forest clearing with distant wildlife"`
-- `"Urban rooftop garden during sunset"`
-- `"Medieval market square during festival"`
+- `"Bustling coffee shop on a rainy afternoon while studying"`
+- `"Walking in the forest at night"`
+- `"Cozy cabin stuck in a thunderstorm"`
 
 ## Development
 
@@ -175,32 +182,7 @@ soundscaper/
 
 - `npm run dev` - Start development server with hot reload
 - `npm run build` - Build production bundle with TypeScript compilation
-- `npm run lint` - Run ESLint for code quality checks
 - `npm run preview` - Preview production build locally
-
-### Code Quality
-
-The project maintains code quality through:
-- **TypeScript** for type safety
-- **ESLint** with React-specific rules for consistent code style
-- **Modern React patterns** including hooks and functional components
-- **Component-based architecture** for maintainable code
-
-## Contributing
-
-We welcome contributions! Here's how you can help:
-
-1. **Fork the repository**
-2. **Create a feature branch**: `git checkout -b feature/amazing-feature`
-3. **Commit your changes**: `git commit -m 'Add amazing feature'`
-4. **Push to the branch**: `git push origin feature/amazing-feature`
-5. **Open a Pull Request**
-
-### Development Guidelines
-- Follow TypeScript best practices
-- Maintain consistent code style with ESLint
-- Add appropriate type definitions for new features
-- Test your changes thoroughly before submitting
 
 ## License
 
@@ -210,19 +192,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - **Freesound.org** community for providing audio samples and free API access
 - **OpenAI** for AI capabilities through GPT and DALL-E 3
-- **React and Vite teams** for development tools
+- **React and Vite** for development tools
 - **Tailwind CSS** for CSS framework
 
 **Getting API Keys**:
 - [OpenAI API Key](https://platform.openai.com/api-keys) - Required for core functionality
 - [Freesound API Key](https://freesound.org/apiv2/apply) - Required for quality sound library access
-
-## Star History
-
-If you find Soundscaper useful, please consider giving it a star on GitHub!
-
----
-
-**Built with care by [Samuel Tjhia](https://github.com/samtjhia)**
 
 *Transform your imagination into immersive audio-visual experiences with Soundscaper.*
