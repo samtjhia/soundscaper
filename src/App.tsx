@@ -867,11 +867,13 @@ export default function App() {
 
 
   return (
-    <main className="h-screen flex items-center justify-center bg-gray-950 text-gray-100">
-      <div className="text-center space-y-3">
-        <h1 className="text-3xl font-bold tracking-tight">SoundSketch</h1>
+    <main className="min-h-screen bg-gray-950 text-gray-100">
+      <div className="flex min-h-screen">
+        <div className="w-1/2 p-6 flex flex-col overflow-y-auto">
+          <div className="flex-1 flex items-start justify-center py-8">
+            <div className="w-full max-w-lg space-y-3">
+              <h1 className="text-3xl font-bold tracking-tight text-center">SoundSketch</h1>
         
-        {/* AI Analysis Status */}
         {aiAnalysis && (
           <div className="flex items-center justify-center gap-2">
             <div
@@ -894,10 +896,9 @@ export default function App() {
           </div>
         )}
         
-        {/* Cache Status */}
         {cacheStatus && (
           <div
-            className={`text-xs px-2 py-1 rounded ${cacheStatus === "HIT"
+            className={`text-xs px-2 py-1 rounded mx-auto w-fit ${cacheStatus === "HIT"
               ? "bg-emerald-700 text-emerald-100"
               : cacheStatus === "STALE"
                 ? "bg-amber-700 text-amber-100"
@@ -907,12 +908,12 @@ export default function App() {
             Cache: {cacheStatus}
           </div>
         )}
-        <p className="text-sm text-gray-300">
+        <div className="text-sm text-gray-300 text-center">
           Prompt: <code className="text-gray-200">{prompt}</code>
-        </p>
+        </div>
 
 
-        <div className="w-full max-w-lg mx-auto mt-2">
+        <div className="w-full mt-2">
           <div className="flex items-center justify-center gap-2">
             <input
               className="flex-1 rounded-md bg-gray-900 border border-gray-700 px-3 py-2 text-sm"
@@ -1008,11 +1009,11 @@ export default function App() {
         </p>
 
         {layers.length > 0 ? (
-          <div className="mt-4 grid gap-3 max-w-lg mx-auto text-left">
+          <div className="mt-4 grid gap-3 text-left w-full">
             {layers.map((L) => {
               const sliderValue = volumes[L.id] ?? L.gain; // raw slider value (0-1)
               return (
-                <div key={L.id} className="rounded-xl bg-white/5 p-3">
+                <div key={L.id} className="rounded-xl bg-white/5 p-3 w-full min-w-0">
                   <div className="flex items-center justify-between">
                     <div className="text-sm font-semibold text-gray-100 flex items-center gap-2">
                       {L.tag}
@@ -1071,11 +1072,11 @@ export default function App() {
                     className="w-full mt-2 accent-emerald-400 disabled:opacity-50"
                     aria-label={`${L.tag} volume`}
                   />
-                  <div className="mt-2 text-xs text-gray-300">
-                    <div className="opacity-90">
+                  <div className="mt-2 text-xs text-gray-300 min-w-0">
+                    <div className="opacity-90 truncate">
                       {L.item?.name} — by {L.item?.username}
                     </div>
-                    <div className="opacity-70">
+                    <div className="opacity-70 truncate">
                       {L.item?.license}
                       {L.link ? (
                         <>
@@ -1127,6 +1128,18 @@ export default function App() {
               />
             );
           })}
+        </div>
+
+            </div>
+          </div>
+        </div>
+
+        <div className="w-1/2 p-6 flex items-center justify-center border-l border-gray-800 min-h-screen">
+          <div className="text-center text-gray-500">
+            <div className="text-6xl mb-4">🎨</div>
+            <h2 className="text-xl font-semibold mb-2">Image Generation</h2>
+            <p className="text-sm">Coming soon...</p>
+          </div>
         </div>
 
       </div>
