@@ -50,9 +50,28 @@ export default function App() {
     return item.previews["preview-lq-mp3"] ?? item.previews["preview-hq-mp3"] ?? null;
   }
 
+  function beginSceneRebuild() {
+    for (const id of Object.keys(layerAudioRefs.current)) {
+      const a = layerAudioRefs.current[id];
+      if (!a) continue;
+      try { a.pause(); a.currentTime = 0; } catch (e) {
+        console.warn("pause failed", id, e);
+      }
+    }
+
+    setIsLoading({});
+    setMutes({});
+    setVolumes({});
+    setLayers([]);
+  }
+
+
   async function runSearch(promptOverride?: string) {
     setLoading(true);
     setError(null);
+
+    beginSceneRebuild();
+
 
     const p = (promptOverride ?? prompt ?? "").trim();
 
