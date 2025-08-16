@@ -1104,7 +1104,7 @@ export default function App() {
                   <button
                     onClick={() => runSearch(prompt)}
                     disabled={loading}
-                    className="px-4 py-3 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-sm font-medium transition-colors"
+                    className="px-4 py-3 rounded-lg bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-sm font-medium transition-colors"
                   >
                     {loading ? "Generating…" : "Generate"}
                   </button>
