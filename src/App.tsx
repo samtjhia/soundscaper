@@ -600,6 +600,7 @@ export default function App() {
   // read once on mount
   const params = new URLSearchParams(window.location.search);
   const DEV_FORCE_FALLBACK = params.get("fallback") === "1";
+  const DEV_MODE = params.get("dev") === "1";
 
   // for auto-run make URL have ?auto=1
   React.useEffect(() => {
@@ -1017,22 +1018,13 @@ export default function App() {
           </p>
         </div>
 
-        <div className="flex items-center justify-center gap-2">
-          <button
-            onClick={() => runSearch(prompt)}
-            disabled={loading}
-            className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 disabled:opacity-50"
-          >
-            {loading ? "Searching..." : "Test Freesound"}
-          </button>
-        </div>
-
         <TransportControls
           layers={layers}
           loading={loading}
           clearing={clearing}
           mixScale={mixScale}
           rulesScale={rulesScale}
+          devMode={DEV_MODE}
           onPlayAll={handlePlayAll}
           onStopAll={handleStopAll}
           onClearCache={handleClearCache}
@@ -1044,7 +1036,7 @@ export default function App() {
         {error && <p className="text-red-400 text-sm">{error}</p>}
 
         <p className="text-xs text-gray-500">
-          Tip: add <code>?auto=1</code> to the URL to auto-run on page load.
+          {DEV_MODE ? <span className="text-yellow-400">Dev mode active - extra controls enabled.</span> : <span>Add <code>?dev=1</code> for developer tools.</span>}
         </p>
 
         <LayerList

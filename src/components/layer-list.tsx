@@ -31,7 +31,7 @@ export function LayerList({
   if (layers.length === 0) {
     return (
       <p className="text-xs text-gray-400 mt-3">
-        No layers yet. Click <em>Test Freesound</em> to build layers.
+        No layers yet. Click <em>Generate</em> to build layers.
       </p>
     );
   }

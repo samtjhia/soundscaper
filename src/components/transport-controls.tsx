@@ -7,6 +7,7 @@ interface TransportControlsProps {
   clearing: boolean;
   mixScale: number;
   rulesScale: number;
+  devMode?: boolean;
   onPlayAll: () => void;
   onStopAll: () => void;
   onClearCache: () => void;
@@ -22,6 +23,7 @@ export function TransportControls({
   clearing,
   mixScale,
   rulesScale,
+  devMode = false,
   onPlayAll,
   onStopAll,
   onClearCache,
@@ -49,23 +51,27 @@ export function TransportControls({
           <Square size={16} />
           Stop All
         </button>
-        <button
-          onClick={onClearCache}
-          className="px-3 py-2 rounded-xl bg-yellow-700 hover:bg-yellow-600 disabled:opacity-50 flex items-center gap-2"
-          disabled={clearing}
-          title="Clear all cached search JSON"
-        >
-          <Trash size={16} />
-          {clearing ? "Clearing…" : "Clear Cache"}
-        </button>
-        <button
-          onClick={onSeedWhitelist}
-          className="px-3 py-2 rounded-xl bg-sky-700 hover:bg-sky-600 flex items-center gap-2"
-          title="Fetch and cache wl:<id> items so fallback can work offline"
-        >
-          <Download size={16} />
-          Seed Whitelist
-        </button>
+        {devMode && (
+          <>
+            <button
+              onClick={onClearCache}
+              className="px-3 py-2 rounded-xl bg-yellow-700 hover:bg-yellow-600 disabled:opacity-50 flex items-center gap-2"
+              disabled={clearing}
+              title="Clear all cached search JSON"
+            >
+              <Trash size={16} />
+              {clearing ? "Clearing…" : "Clear Cache"}
+            </button>
+            <button
+              onClick={onSeedWhitelist}
+              className="px-3 py-2 rounded-xl bg-sky-700 hover:bg-sky-600 flex items-center gap-2"
+              title="Fetch and cache wl:<id> items so fallback can work offline"
+            >
+              <Download size={16} />
+              Seed Whitelist
+            </button>
+          </>
+        )}
       </div>
 
       {/* Mix Controls */}
