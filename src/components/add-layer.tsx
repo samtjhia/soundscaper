@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Plus } from 'lucide-react';
 
 interface AddLayerProps {
   prompt: string;
@@ -6,10 +7,6 @@ interface AddLayerProps {
   onAddLayer: (tag: string) => void;
 }
 
-/**
- * Add layer component for manually adding new layers
- * Extracted from App.tsx for better organization
- */
 export function AddLayer({ prompt, loading, onAddLayer }: AddLayerProps) {
   const [addLayerTag, setAddLayerTag] = useState<string>("");
 
@@ -40,8 +37,9 @@ export function AddLayer({ prompt, loading, onAddLayer }: AddLayerProps) {
         <button
           onClick={handleAdd}
           disabled={loading || !addLayerTag.trim()}
-          className="px-4 py-2 rounded-md bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-sm font-medium"
+          className="px-4 py-2 rounded-md bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-sm font-medium flex items-center gap-2"
         >
+          <Plus size={16} />
           Add
         </button>
       </div>

@@ -1,5 +1,6 @@
 import type { Layer } from '../types';
 import { clamp01 } from '../audio/audio-manager';
+import { Volume2, VolumeX, RefreshCw, Trash2, Scale3d } from 'lucide-react';
 
 interface LayerListProps {
   layers: Layer[];
@@ -14,10 +15,7 @@ interface LayerListProps {
   onDelete: (layerId: string) => void;
 }
 
-/**
- * Layer list component for displaying and controlling individual layers
- * Extracted from App.tsx for better organization
- */
+
 export function LayerList({
   layers,
   volumes,
@@ -57,27 +55,30 @@ export function LayerList({
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => onMuteToggle(L.id)}
-                  className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/15"
+                  className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/15 flex items-center gap-1"
                   aria-pressed={mutes[L.id] ? "true" : "false"}
                   title={mutes[L.id] ? "Unmute" : "Mute"}
                 >
-                  {mutes[L.id] ? "Unmute" : "Mute"}
+                  {mutes[L.id] ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                  <span className="sr-only">{mutes[L.id] ? "Unmute" : "Mute"}</span>
                 </button>
 
                 <button
                   onClick={() => onSwap(L)}
-                  className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/15"
+                  className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/15 flex items-center gap-1"
                   title="Swap to a different take"
                 >
-                  Swap
+                  <RefreshCw size={14} />
+                  <span className="sr-only">Swap</span>
                 </button>
 
                 <button
                   onClick={() => onDelete(L.id)}
-                  className="text-xs px-2 py-1 rounded bg-red-600 hover:bg-red-500"
+                  className="text-xs px-2 py-1 rounded bg-red-600 hover:bg-red-500 flex items-center gap-1"
                   title="Delete this layer"
                 >
-                  Delete
+                  <Trash2 size={14} />
+                  <span className="sr-only">Delete</span>
                 </button>
 
                 <div className="text-xs text-gray-300 tabular-nums w-16 text-right">
@@ -105,7 +106,8 @@ export function LayerList({
               <div className="opacity-90 truncate">
                 {L.item?.name} — by {L.item?.username}
               </div>
-              <div className="opacity-70 truncate">
+              <div className="opacity-70 truncate flex items-center gap-1">
+                <Scale3d size={12} />
                 {L.item?.license}
                 {L.link ? (
                   <>
