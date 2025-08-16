@@ -1,4 +1,3 @@
-// tag gain priors (0..1). Tweak to taste.
 const tagGainPriors: Record<string, number> = {
   roomtone: 0.40,
   light_rain: 0.45,
@@ -11,6 +10,10 @@ const tagGainPriors: Record<string, number> = {
   birds: 0.40,
   insects: 0.38,
   neon_buzz: 0.28,
+  waves: 0.42,
+  seagulls: 0.38,
+  subway: 0.36,
+  bell: 0.30,
 };
 
 export function gainForTag(tag: string): number {
@@ -25,17 +28,11 @@ function norm(s: string) {
     .replace(/\s+/g, " ")
     .trim();
 }
-
-function tokenize(s: string): string[] {
-  return norm(s).split(" ").filter(Boolean);
-}
-
-function hasAny(hay: string, needles: string[]): boolean {
-  return needles.some((n) => hay.includes(n));
-}
-function tokensHasAny(tokens: string[], needles: string[]): boolean {
+function tokenize(s: string): string[] { return norm(s).split(" ").filter(Boolean); }
+function hasAny(hay: string, needles: string[]) { return needles.some(n => hay.includes(n)); }
+function tokensHasAny(tokens: string[], needles: string[]) {
   const set = new Set(tokens);
-  return needles.some((n) => set.has(n));
+  return needles.some(n => set.has(n));
 }
 
 const RAIN_LIGHT = ["light rain", "drizzle", "drizzly", "mist", "sprinkle", "misting"];
@@ -48,9 +45,14 @@ const BIRD_WORDS = ["birds", "sparrow", "seagull", "gull", "songbird", "tweeting
 const INSECT_WORDS = ["insects", "cricket", "crickets", "cicada", "cicadas", "katydid", "bugs"];
 const NEON_WORDS = ["neon", "buzz", "hum", "humming", "electric", "fluorescent"];
 const VINYL_WORDS = ["vinyl", "record", "turntable", "lofi", "lo-fi"];
-
 const RURAL_WORDS = ["rural", "field", "farm", "forest", "woods", "park", "meadow", "countryside"];
 const NIGHT_WORDS = ["night", "midnight", "evening", "dusk", "twilight"];
+
+const SEA_WORDS = ["sea", "ocean", "beach", "shore", "coast", "seaside", "surf", "waves"];
+const GULL_WORDS = ["seagull", "gull", "gulls"];
+const SUBWAY_WORDS = ["subway", "metro", "underground", "tube", "u bahn", "u-bahn", "mrt", "station", "platform", "train"];
+const TEMPLE_WORDS = ["temple", "shrine", "pagoda", "torii", "monastery", "shinto", "buddhist"];
+const BELL_WORDS = ["bell", "bells", "chime", "chimes", "gong", "windchime", "wind chime", "wind-chime", "windchimes"];
 
 const QUIET_WORDS = ["quiet", "calm", "soft", "gentle", "peaceful", "serene", "subtle", "low"];
 const BUSY_WORDS = ["busy", "crowded", "bustling", "noisy", "loud", "hectic", "packed", "traffic", "market"];
@@ -70,56 +72,70 @@ export function mapPromptToTags(prompt: string): { tags: string[]; gainScale: nu
   // wind
   if (tokensHasAny(tokens, WIND_WORDS)) chosen.push("wind");
 
+  // seaside
+  if (tokensHasAny(tokens, SEA_WORDS)) {
+    chosen.push("waves");
+    if (tokensHasAny(tokens, GULL_WORDS)) chosen.push("seagulls");
+    else chosen.push("birds"); // fallback if they didn’t say gulls
+    if (!mentionsHeavy) chosen.push("wind");
+  }
+
+  // subway / metro
+  if (tokensHasAny(tokens, SUBWAY_WORDS)) {
+    chosen.push("subway");
+    chosen.push("distant_chatter");
+    chosen.push("footsteps_stone");
+    chosen.push("neon_buzz");
+  }
+
   // city textures
   if (tokensHasAny(tokens, CITY_WORDS)) {
     chosen.push("distant_chatter");
-    // night city or neon words → neon buzz
     if (tokensHasAny(tokens, NEON_WORDS) || tokensHasAny(tokens, NIGHT_WORDS)) {
       chosen.push("neon_buzz");
     }
-    // scooters etc.
     if (tokensHasAny(tokens, VEHICLE_2W)) {
       chosen.push("motorcycle");
     }
   }
 
-  // footsteps on stone/cobble/street
-  if (tokensHasAny(tokens, FOOTSTEP_WORDS)) {
-    chosen.push("footsteps_stone");
-  }
+  // footsteps
+  if (tokensHasAny(tokens, FOOTSTEP_WORDS)) chosen.push("footsteps_stone");
 
-  // rural / natural ambience
+  // rural / natural
   const isRuralish = tokensHasAny(tokens, RURAL_WORDS);
   const isNightish = tokensHasAny(tokens, NIGHT_WORDS);
-  if (isRuralish || tokensHasAny(tokens, BIRD_WORDS)) {
-    chosen.push("birds");
-  }
-  if (isRuralish || isNightish || tokensHasAny(tokens, INSECT_WORDS)) {
-    chosen.push("insects");
+  if (isRuralish || tokensHasAny(tokens, BIRD_WORDS)) chosen.push("birds");
+  if (isRuralish || isNightish || tokensHasAny(tokens, INSECT_WORDS)) chosen.push("insects");
+
+  // temple / bells
+  if (tokensHasAny(tokens, TEMPLE_WORDS) || tokensHasAny(tokens, BELL_WORDS)) {
+    chosen.push("bell");
+    if (tokensHasAny(tokens, WIND_WORDS)) chosen.push("wind");
+    if (isNightish) chosen.push("insects"); else chosen.push("birds");
   }
 
-  // vinyl texture (indoor/cafe/lofi)
-  if (tokensHasAny(tokens, VINYL_WORDS)) {
-    chosen.push("vinyl_crackle");
-  }
+  // vinyl
+  if (tokensHasAny(tokens, VINYL_WORDS)) chosen.push("vinyl_crackle");
 
   // 2-wheelers explicitly
-  if (tokensHasAny(tokens, VEHICLE_2W)) {
-    chosen.push("motorcycle");
-  }
+  if (tokensHasAny(tokens, VEHICLE_2W)) chosen.push("motorcycle");
 
-  // dedup while preserving order
   const order = [
     "roomtone",
     "rain",
     "light_rain",
     "wind",
+    "waves",
+    "seagulls",
+    "subway",
     "distant_chatter",
     "footsteps_stone",
     "birds",
     "insects",
     "motorcycle",
     "neon_buzz",
+    "bell",
     "vinyl_crackle",
   ] as const;
 
@@ -131,10 +147,8 @@ export function mapPromptToTags(prompt: string): { tags: string[]; gainScale: nu
     return true;
   });
 
-  // cap to 5 tags max
   const tags = sorted.slice(0, 5);
 
-  // intensity → gain scale
   let gainScale = 1.0;
   if (tokensHasAny(tokens, QUIET_WORDS)) gainScale = 0.7;
   if (tokensHasAny(tokens, BUSY_WORDS)) gainScale = 1.2;
