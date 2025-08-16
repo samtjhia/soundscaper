@@ -3,7 +3,7 @@ import { searchOnce } from "./freesound/client";
 import { AUTO_RUN_ON_LOAD, SEARCH_DEFAULT_QUERY, CACHE_TTL_MS } from "./config";
 import type { FSItem, Layer } from "./types";
 import { pickInitialTags, gainForTag } from "./ai/rules";
-import { getCache, setCache, clearOldCache, clearOldVersions } from "./cache/idb";
+import { getCache, setCache, clearOldCache, clearOldVersions, clearAllCache } from "./cache/idb";
 import { hashPromptTagsWithGains } from "./cache/hash";
 
 
@@ -19,7 +19,18 @@ export default function App() {
   const [isLoading, setIsLoading] = useState<Record<string, boolean>>({});
 
   const [cacheStatus, setCacheStatus] = useState<string | null>(null);
+  const [clearing, setClearing] = useState(false);
 
+  async function handleClearCache() {
+    try {
+      setClearing(true);
+      await clearAllCache();
+      console.log("[cache] CLEARED ALL");
+      setCacheStatus(null);
+    } finally {
+      setClearing(false);
+    }
+  }
 
   function selectPreviewUrl(item?: FSItem | null): string | null {
     if (!item?.previews) return null;
@@ -248,6 +259,14 @@ export default function App() {
             className="px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50"
           >
             Stop All
+          </button>
+          <button
+            onClick={handleClearCache}
+            className="px-3 py-2 rounded-xl bg-yellow-700 hover:bg-yellow-600 disabled:opacity-50"
+            disabled={clearing}
+            title="Clear all cached search JSON"
+          >
+            {clearing ? "Clearing…" : "Clear Cache"}
           </button>
         </div>
 

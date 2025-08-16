@@ -38,6 +38,7 @@ export async function setCache(key: string, data: any): Promise<void> {
   });
 }
 
+//when cache is too old
 export async function clearOldCache(ttlMs: number): Promise<void> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -59,6 +60,7 @@ export async function clearOldCache(ttlMs: number): Promise<void> {
   });
 }
 
+//when versions are outdated
 export async function clearOldVersions(currentPrefix: string): Promise<void> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -76,5 +78,17 @@ export async function clearOldVersions(currentPrefix: string): Promise<void> {
     };
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
+  });
+}
+
+//clear button
+export async function clearAllCache(): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.clear();
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
   });
 }
