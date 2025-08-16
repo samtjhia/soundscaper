@@ -52,7 +52,7 @@ export function LayerList({
                 )}
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
                 <button
                   onClick={() => onMuteToggle(L.id)}
                   className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/15 flex items-center gap-1"
@@ -81,7 +81,7 @@ export function LayerList({
                   <span className="sr-only">Delete</span>
                 </button>
 
-                <div className="text-xs text-gray-300 tabular-nums w-16 text-right">
+                <div className="text-xs text-gray-300 tabular-nums min-w-[2.5rem] text-center ml-1">
                   {(sliderValue * 100).toFixed(0)}%
                 </div>
               </div>
@@ -113,12 +113,13 @@ export function LayerList({
                   <>
                     {" • "}
                     <a
-                      className="underline"
+                      className="underline hover:text-gray-100 transition-colors"
                       href={L.link}
                       target="_blank"
                       rel="noreferrer"
+                      title="View on Freesound"
                     >
-                      link
+                      source
                     </a>
                   </>
                 ) : null}

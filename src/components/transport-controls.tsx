@@ -10,6 +10,7 @@ interface TransportControlsProps {
   devMode?: boolean;
   onPlayAll: () => void;
   onStopAll: () => void;
+  onClearAll: () => void;
   onClearCache: () => void;
   onSeedWhitelist: () => void;
   onNudgeMix: (factor: number) => void;
@@ -26,19 +27,20 @@ export function TransportControls({
   devMode = false,
   onPlayAll,
   onStopAll,
+  onClearAll,
   onClearCache,
   onSeedWhitelist,
   onNudgeMix,
   onApplyGlobalScale,
 }: TransportControlsProps) {
   return (
-    <>
+    <div className="my-6">
       {/* Transport Controls */}
-      <div className="flex items-center justify-center gap-2 mt-4">
+      <div className="flex items-center justify-center gap-2">
         <button
           onClick={onPlayAll}
           disabled={!layers.length}
-          className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 flex items-center gap-2"
+          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 flex items-center gap-2 font-medium"
         >
           <Play size={16} />
           Play All
@@ -46,10 +48,18 @@ export function TransportControls({
         <button
           onClick={onStopAll}
           disabled={!layers.length}
-          className="px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 flex items-center gap-2"
+          className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 flex items-center gap-2 font-medium"
         >
           <Square size={16} />
           Stop All
+        </button>
+        <button
+          onClick={onClearAll}
+          disabled={!layers.length}
+          className="px-4 py-2 rounded-xl bg-red-700 hover:bg-red-600 disabled:opacity-50 flex items-center gap-2 font-medium"
+        >
+          <Trash size={16} />
+          Clear All
         </button>
         {devMode && (
           <>
@@ -75,35 +85,49 @@ export function TransportControls({
       </div>
 
       {/* Mix Controls */}
-      <div className="flex items-center justify-center gap-2 mt-2 text-xs">
-        <span className="opacity-70">Mix:</span>
+      <div className="flex items-center justify-center gap-2 mt-3 text-sm">
+        <span className="text-gray-400 mr-1">Mix:</span>
         <button
-          className="rounded-md px-2 py-1 bg-white/10 hover:bg-white/15 flex items-center gap-1"
+          className="rounded-lg px-3 py-1.5 bg-white/10 hover:bg-white/15 flex items-center gap-1.5 text-xs font-medium"
           onClick={() => onNudgeMix(0.9)}
           disabled={loading || layers.length === 0}
         >
-          <Minus size={14} />
-          Calmer −10%
+          <Minus size={12} />
+          Calmer
         </button>
         <button
-          className="rounded-md px-2 py-1 bg-white/10 hover:bg-white/15 flex items-center gap-1"
+          className="rounded-lg px-3 py-1.5 bg-white/10 hover:bg-white/15 flex items-center gap-1.5 text-xs font-medium"
           onClick={() => onNudgeMix(1.1)}
           disabled={loading || layers.length === 0}
         >
-          <Plus size={14} />
-          Busier +10%
+          <Plus size={12} />
+          Busier
         </button>
         <button
-          className="rounded-md px-2 py-1 bg-white/10 hover:bg-white/15 flex items-center gap-1"
+          className="rounded-lg px-3 py-1.5 bg-white/10 hover:bg-white/15 flex items-center gap-1.5 text-xs font-medium"
           onClick={() => onApplyGlobalScale(rulesScale)}
           disabled={loading || layers.length === 0}
-          title="Reset to the rules-suggested intensity for this prompt"
+          title="Reset mix scale and all slider positions to original values"
         >
-          <RotateCcw size={14} />
+          <RotateCcw size={12} />
           Reset
         </button>
-        <span className="opacity-60 ml-1">scale: {mixScale.toFixed(2)}</span>
+        <div className="flex items-center gap-2 ml-3">
+          <div className="w-20 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+            <div 
+              className={`h-full transition-all duration-200 ${
+                mixScale < 0.8 ? 'bg-blue-400' : 
+                mixScale > 1.2 ? 'bg-red-400' : 
+                'bg-emerald-400'
+              }`}
+              style={{ width: `${Math.min(100, mixScale * 50)}%` }}
+            />
+          </div>
+          <span className="text-gray-400 text-xs tabular-nums min-w-[2.5rem]">
+            {mixScale.toFixed(2)}x
+          </span>
+        </div>
       </div>
-    </>
+    </div>
   );
 }

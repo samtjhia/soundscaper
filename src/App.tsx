@@ -44,13 +44,36 @@ export default function App() {
     reasoning?: string;
   } | null>(null);
 
+  // Message system for user-facing feedback
+  const [messages, setMessages] = useState<Array<{
+    id: string;
+    type: 'info' | 'success' | 'warning' | 'error';
+    text: string;
+    timestamp: number;
+  }>>([]);
+
+  const addMessage = (type: 'info' | 'success' | 'warning' | 'error', text: string) => {
+    const id = `msg-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    setMessages(prev => [
+      ...prev.slice(-9), // Keep only last 10 messages
+      { id, type, text, timestamp: Date.now() }
+    ]);
+    
+    // Auto-remove success and info messages after 10 seconds
+    if (type === 'success' || type === 'info') {
+      setTimeout(() => {
+        setMessages(prev => prev.filter(msg => msg.id !== id));
+      }, 10000);
+    }
+  };
+
 
 
   async function handleClearCache() {
     try {
       setClearing(true);
       await clearAllCache();
-      console.log("[cache] CLEARED ALL");
+      addMessage('success', 'Cache cleared successfully');
       setCacheStatus(null);
     } finally {
       setClearing(false);
@@ -80,7 +103,7 @@ export default function App() {
       const a = layerAudioRefs.current[id];
       if (!a) continue;
       try { a.pause(); a.currentTime = 0; } catch (e) {
-        console.warn("pause failed", id, e);
+        addMessage('warning', `Failed to stop audio layer: ${id}`);
       }
     }
 
@@ -92,6 +115,7 @@ export default function App() {
 
   async function seedWhitelistCache(maxPerTag = 2) {
     const wl = allWhitelist(); // { tag: number[] }
+    addMessage('info', 'Seeding whitelist cache...');
     for (const [tag, ids] of Object.entries(wl)) {
       const pick = ids.slice(0, maxPerTag);
       for (const id of pick) {
@@ -99,18 +123,16 @@ export default function App() {
         try {
           const hit = await getCache<any>(key);
           if (hit?.data) {
-            console.log(`[seed] HIT ${tag} id=${id} -> ${key}`);
             continue;
           }
           const item = await getById(id);
           await setCache(key, item);
-          console.log(`[seed] STORED ${tag} id=${id} -> ${key}`);
         } catch (e) {
-          console.warn(`[seed] failed ${tag} id=${id}`, e);
+          addMessage('warning', `Failed to cache ${tag} (ID: ${id})`);
         }
       }
     }
-    console.log("[seed] done");
+    addMessage('success', 'Whitelist cache seeding complete');
   }
 
 
@@ -118,6 +140,9 @@ export default function App() {
     setLoading(true);
     setError(null);
     setAiAnalysis(null);
+    
+    // Clear old messages when starting a new search
+    setMessages([]);
 
     beginSceneRebuild();
 
@@ -125,7 +150,7 @@ export default function App() {
 
     try {
       // Use AI service instead of hardcoded rules
-      console.log("[AI] Starting analysis for prompt:", p);
+      addMessage('info', 'Analyzing prompt with AI...');
       const aiResult = await aiService.analyzePrompt(p);
       
       setAiAnalysis({
@@ -138,18 +163,10 @@ export default function App() {
       setRulesScale(gainScale);
       setMixScale(gainScale);
 
-      console.log("[AI] Analysis complete:", { 
-        source: aiResult.source, 
-        tags, 
-        gainScale, 
-        confidence: aiResult.confidence,
-        tagsToAvoid: aiResult.llmSuggestions?.tagsToAvoid 
-      });
+      addMessage('success', `AI analysis complete using ${aiResult.source.toUpperCase()}`);
 
       // Use prompt-only cache key to ensure consistent hits for same user input
       const cacheKey = `${FETCH_VERSION}:prompt|${p.toLowerCase()}`;
-      
-      console.log("[cache] Using prompt-based key:", cacheKey);
 
       clearOldCache(CACHE_TTL_MS).catch(() => { });
       await clearOldVersions(FETCH_VERSION + ":");
@@ -160,14 +177,14 @@ export default function App() {
 
       if (cached && isFresh && cached.data?.byTag) {
         byTag = cached.data.byTag;
-        console.log("[cache] HIT (fresh)", cacheKey, "prompt=", p, "tags=", tags.join(", "));
+        addMessage('info', `Using cached results for "${p}"`);
         setCacheStatus("HIT");
       } else {
         if (cached && !isFresh) {
-          console.log("[cache] STALE (expired)", cacheKey, "prompt=", p);
+          addMessage('info', 'Cache is stale, fetching fresh results...');
           setCacheStatus("STALE");
         } else {
-          console.log("[cache] MISS", cacheKey, "prompt=", p);
+          addMessage('info', 'No cache found, searching for sounds...');
           setCacheStatus("MISS");
         }
 
@@ -178,7 +195,7 @@ export default function App() {
               try {
                 data = await withTimeout(searchOnce(tag), 10_000);
               } catch (err) {
-                console.warn(`[${tag}] search failed or timed out`, err);
+                addMessage('warning', `Search failed for "${tag}"`);
               }
             }
 
@@ -190,20 +207,18 @@ export default function App() {
                 try {
                   const cachedWl = await getCache<any>(wlKey);
                   if (cachedWl?.data) {
-                    console.log(`[${tag}] whitelist HIT`, wid);
                     data = { results: [cachedWl.data] };
                   } else {
                     const item = await getById(wid);
                     await setCache(wlKey, item);
-                    console.log(`[${tag}] whitelist STORED`, wid);
                     data = { results: [item] };
                   }
                 } catch (e) {
-                  console.error(`[${tag}] whitelist fetch failed`, e);
+                  addMessage('warning', `Failed to fetch fallback audio for "${tag}"`);
                   data = null;
                 }
               } else {
-                console.warn(`[${tag}] no whitelist ID available`);
+                addMessage('warning', `No fallback audio available for "${tag}"`);
               }
             }
 
@@ -214,14 +229,13 @@ export default function App() {
         byTag = Object.fromEntries(entries);
 
         await setCache(cacheKey, { byTag });
-        console.log("[cache] STORED", cacheKey, "for tags=", tags.join(", "));
+        addMessage('success', `Results cached for "${p}"`);
       }
 
       const results = await Promise.all(
         tags.map(async (tag) => {
           const data = byTag?.[tag];
           const rawResults = data?.results ?? [];
-          console.log(`[${tag}] Raw search results:`, rawResults.length);
           
           // Map all results first (don't filter by preview yet)
           const allCandidates: FSItem[] = rawResults
@@ -238,7 +252,7 @@ export default function App() {
             }));
 
           if (allCandidates.length === 0) {
-            console.warn(`[${tag}] no search results at all`);
+            addMessage('warning', `No search results found for "${tag}"`);
             return null;
           }
 
@@ -283,25 +297,19 @@ export default function App() {
           
           // Find the best candidate that has a usable preview
           let bestItem: FSItem | null = null;
-          let selectedIndex = -1;
           
           for (let i = 0; i < scoredCandidates.length; i++) {
             const { candidate } = scoredCandidates[i];
             if (hasUsablePreview(candidate)) {
               bestItem = candidate;
-              selectedIndex = i;
               break;
-            } else {
-              console.log(`[${tag}] Skipping candidate ${i + 1}: "${candidate.name}" - no usable preview`);
             }
           }
 
           if (!bestItem) {
-            console.warn(`[${tag}] no candidates with usable previews found (checked ${scoredCandidates.length} options)`);
+            addMessage('warning', `No playable audio found for "${tag}"`);
             return null;
           }
-
-          console.log(`[${tag}] Selected "${bestItem.name}" (score: ${scoredCandidates[selectedIndex].score.toFixed(2)}, rank: ${selectedIndex + 1}/${scoredCandidates.length})`);
 
           // Try LLM scoring if available (as additional validation)
           if (aiService.isLLMEnabled() && allCandidates.length > 2) {
@@ -321,11 +329,10 @@ export default function App() {
               
               // Only use LLM choice if it has a usable preview AND high relevance
               if (llmChoice && hasUsablePreview(llmChoice) && llmBest.relevanceScore > 0.7) {
-                console.log(`[${tag}] LLM prefers "${llmChoice.name}" (relevance: ${llmBest.relevanceScore.toFixed(2)}): ${llmBest.reasoning}`);
                 bestItem = llmChoice;
               }
             } catch (error) {
-              console.warn(`[${tag}] LLM scoring failed:`, error);
+              // LLM scoring failed, continue with rule-based selection
             }
           }
 
@@ -357,19 +364,17 @@ export default function App() {
       
       while (usable.length < targetSounds && fallbackAttempts < maxFallbackAttempts) {
         fallbackAttempts++;
-        console.log(`[FALLBACK] Attempt ${fallbackAttempts}: Only ${usable.length}/${targetSounds} sounds found. Trying fallback tags...`);
+        addMessage('info', `Searching for additional sounds (${usable.length}/${targetSounds} found)...`);
         
         try {
           // Get fallback tags from LLM
           const failedTags = tags.filter(tag => !usable.some(layer => layer.tag === tag));
-          console.log(`[FALLBACK] Failed tags:`, failedTags);
           
           if (aiService.isLLMEnabled()) {
             const fallbackPrompt = `The original tags [${failedTags.join(', ')}] failed to find audio for "${p}". Suggest ${targetSounds - usable.length} alternative single-word tags that would create similar atmosphere but are more likely to have audio samples available. Return only the tags, comma-separated.`;
             
             // Use LLM service directly instead of fetch
             const fallbackTags = await aiService.generateFallbackTags(fallbackPrompt, targetSounds - usable.length);
-            console.log(`[FALLBACK] Trying alternative tags:`, fallbackTags);
             
             // Try fallback tags
             const fallbackResults = await Promise.all(
@@ -393,7 +398,6 @@ export default function App() {
                       
                     if (candidates.length > 0) {
                       const bestItem = candidates[0]; // Just take first usable one for speed
-                      console.log(`[FALLBACK] Found "${bestItem.name}" for tag "${tag}"`);
                       
                       const base = gainForTag(tag);
                       const layer: Layer = {
@@ -415,37 +419,27 @@ export default function App() {
             
             const newLayers = fallbackResults.filter((x: any): x is Layer => !!x);
             usable = [...usable, ...newLayers];
-            console.log(`[FALLBACK] Added ${newLayers.length} new sounds. Total: ${usable.length}`);
             
             if (newLayers.length === 0) {
-              console.log(`[FALLBACK] No new sounds found, stopping fallback attempts`);
+              addMessage('warning', 'No additional sounds found');
               break;
+            } else {
+              addMessage('success', `Found ${newLayers.length} additional sounds`);
             }
           } else {
-            console.log(`[FALLBACK] LLM not available, skipping fallback`);
             break;
           }
         } catch (fallbackErr) {
-          console.warn(`[FALLBACK] Fallback attempt ${fallbackAttempts} failed:`, fallbackErr);
+          addMessage('error', 'Fallback search failed');
         }
       }
       
       setLayers(usable);
+      addMessage('success', `Soundscape complete: ${usable.length} layers loaded`);
 
-      console.table(
-        usable.map((L) => ({
-          id: L.id,
-          tag: L.tag,
-          gain: L.gain,
-          name: L.item?.name,
-          by: L.item?.username,
-          license: L.item?.license,
-          previewUrl: (selectPreviewUrl(L.item) ?? "").slice(0, 60) + "...",
-        }))
-      );
     } catch (e: any) {
-      console.error(e);
       setError(e?.message ?? "Unknown error");
+      addMessage('error', 'Failed to generate soundscape');
     } finally {
       setLoading(false);
     }
@@ -454,18 +448,49 @@ export default function App() {
   function applyGlobalScale(newScale: number) {
     setMixScale(newScale);
 
+    // Reset all volumes to their original values
+    const originalVolumes: Record<string, number> = {};
+    for (const layer of layers) {
+      originalVolumes[layer.id] = layer.gain;
+    }
+    setVolumes(originalVolumes);
+
+    // Update audio elements with original gains and new scale
     for (const id of Object.keys(layerAudioRefs.current)) {
       const a = layerAudioRefs.current[id];
       if (!a) continue;
       const L = layers.find(x => x.id === id);
       if (!L) continue;
-      a.volume = effectiveGain(id, L.gain);
+      a.volume = clamp01(L.gain * newScale);
     }
   }
 
   function nudgeMix(factor: number) {
-    const target = clamp01(mixScale * factor);
-    applyGlobalScale(target);
+    const newScale = clamp01(mixScale * factor);
+    setMixScale(newScale);
+
+    // Check if any audio is currently playing
+    const anyPlaying = layers.some(L => {
+      const a = layerAudioRefs.current[L.id];
+      return a && !a.paused;
+    });
+
+    // If audio is playing, restart it with new volumes
+    if (anyPlaying) {
+      // Stop all first
+      for (const L of layers) {
+        const a = layerAudioRefs.current[L.id];
+        if (a && !a.paused) {
+          a.pause();
+          a.currentTime = 0;
+        }
+      }
+      
+      // Then restart with new settings
+      setTimeout(() => {
+        handlePlayAll();
+      }, 50); // Small delay to ensure stop is processed
+    }
   }
 
 
@@ -552,12 +577,15 @@ export default function App() {
 
 
   const handlePlayAll = () => {
+    if (layers.length === 0) return;
+    
+    addMessage('info', 'Starting playback...');
+    
     for (const L of layers) {
       const a = layerAudioRefs.current[L.id];
       if (!a) continue;
 
       if (!a.src) {
-        console.warn(`[play] No src set for ${L.id}, skipping play`);
         continue;
       }
 
@@ -570,18 +598,15 @@ export default function App() {
       a.loop = true;
       a.currentTime = 0;
 
-      a.play().catch(err => {
+      a.play().catch(() => {
         if (a.readyState < 2) {
-          console.log(`[play] Audio not ready for ${L.id}, readyState: ${a.readyState}, waiting...`);
           const onReady = () => {
             a.currentTime = 0;
-            a.play().catch(err => {
-              console.warn("delayed play failed", L.id, err);
+            a.play().catch(() => {
+              // Silent fail on delayed play
             });
           };
           a.addEventListener('canplay', onReady, { once: true });
-        } else {
-          console.warn("play failed", L.id, err);
         }
       });
     }
@@ -589,12 +614,34 @@ export default function App() {
 
 
   const handleStopAll = () => {
+    if (layers.length === 0) return;
+    
+    addMessage('info', 'Stopping playback...');
+    
     for (const L of layers) {
       const a = layerAudioRefs.current[L.id];
       if (!a) continue;
       a.pause();
       a.currentTime = 0;
     }
+  };
+
+  const handleClearAll = () => {
+    // Stop all audio first
+    handleStopAll();
+    
+    // Clear all layer data
+    setIsLoading({});
+    setMutes({});
+    setVolumes({});
+    setLayers([]);
+    
+    // Reset scales to defaults
+    setMixScale(1);
+    setRulesScale(1);
+    
+    // Clear any error states
+    setError(null);
   };
 
   // read once on mount
@@ -782,7 +829,6 @@ export default function App() {
         setIsLoading(prev => ({ ...prev, [L.id]: true }));
         swappingRef.current.add(L.id);
 
-        const wasPlaying = !a.paused;
         const targetVol = effectiveGain(L.id, L.gain);
 
         try {
@@ -807,23 +853,15 @@ export default function App() {
         a.muted = !!mutes[L.id];
 
         const onLoadSuccess = () => {
-          console.log(`[swap] successfully loaded ${L.id} -> ${nextItem.id}`);
-          if (wasPlaying) {
-            a.currentTime = 0;
-            a.play().catch(err => {
-              console.warn("swap play failed", L.id, err);
-              setIsLoading(prev => ({ ...prev, [L.id]: false }));
-              swappingRef.current.delete(L.id);
-            });
-          } else {
-            setIsLoading(prev => ({ ...prev, [L.id]: false }));
-            swappingRef.current.delete(L.id);
-          }
+          addMessage('success', `Swapped to alternative for "${L.tag}"`);
+          // Don't auto-play after swap - let user manually start playback
+          setIsLoading(prev => ({ ...prev, [L.id]: false }));
+          swappingRef.current.delete(L.id);
           resolve();
         };
 
-        const onLoadError = (e: Event) => {
-          console.error(`[swap] failed to load ${L.id} -> ${nextItem.id}`, e);
+        const onLoadError = () => {
+          addMessage('warning', `Failed to load alternative for "${L.tag}"`);
           setIsLoading(prev => ({ ...prev, [L.id]: false }));
           swappingRef.current.delete(L.id);
           resolve();
@@ -835,14 +873,12 @@ export default function App() {
         try {
           a.load();
         } catch (e) {
-          console.warn(`[swap] load() failed for ${L.id}`, e);
-          onLoadError(e as Event);
+          onLoadError();
         }
 
         setTimeout(() => {
           if (swappingRef.current.has(L.id)) {
-            console.warn(`[swap] timeout for ${L.id}`);
-            onLoadError(new Event('timeout'));
+            onLoadError();
           }
         }, 10000);
       });
@@ -881,13 +917,12 @@ export default function App() {
     delete alternatesRef.current[layerId];
     delete altIndexRef.current[layerId];
 
-    console.log(`[delete] Removed layer: ${layerId}`);
-  }
-
-  async function handleAddLayer(tag: string) {
+      console.log(`[delete] Removed layer: ${layerId}`);
+      addMessage('success', `Removed "${layerId}" layer`);
+    }  async function handleAddLayer(tag: string) {
     if (!tag.trim() || !prompt.trim()) return;
     
-    console.log(`[add] Adding layer for tag: "${tag}" in context: "${prompt}"`);
+    addMessage('info', `Adding layer for "${tag}"...`);
     setLoading(true);
     setError(null);
 
@@ -937,10 +972,10 @@ export default function App() {
       alternatesRef.current[layerId] = scored.slice(1, 10).map(s => s.item);
       altIndexRef.current[layerId] = 0;
 
-      console.log(`[add] Successfully added layer: ${tag} (${best.name}) with contextual gain: ${contextualGain.toFixed(2)}`);
+      addMessage('success', `Added "${tag}" layer successfully`);
 
     } catch (err) {
-      console.error(`[add] Failed to add layer for "${tag}":`, err);
+      addMessage('error', `Failed to add "${tag}": ${err instanceof Error ? err.message : 'Unknown error'}`);
       setError(`Failed to add "${tag}": ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
@@ -953,159 +988,189 @@ export default function App() {
   return (
     <main className="min-h-screen bg-gray-950 text-gray-100">
       <div className="flex min-h-screen">
+        {/* Left side: Logo, Prompt, Messages */}
         <div className="w-1/2 p-6 flex flex-col overflow-y-auto">
-          <div className="flex-1 flex items-start justify-center py-8">
-            <div className="w-full max-w-lg space-y-3">
+          <div className="flex-1 flex flex-col py-8">
+            {/* Logo and Prompt Section */}
+            <div className="w-full max-w-lg mx-auto space-y-6 mb-8">
               <h1 className="text-3xl font-bold tracking-tight text-center">SoundSketch</h1>
         
-        {aiAnalysis && (
-          <div className="flex items-center justify-center gap-2">
-            <div
-              className={`text-xs px-2 py-1 rounded ${
-                aiAnalysis.source === 'llm' 
-                  ? "bg-purple-700 text-purple-100" 
-                  : aiAnalysis.source === 'fallback'
-                  ? "bg-orange-700 text-orange-100"
-                  : "bg-blue-700 text-blue-100"
-              }`}
-              title={aiAnalysis.reasoning || 'AI analysis complete'}
-            >
-              AI: {aiAnalysis.source.toUpperCase()} ({(aiAnalysis.confidence * 100).toFixed(0)}%)
-            </div>
-            {aiService.isLLMEnabled() && (
-              <div className="text-xs px-2 py-1 rounded bg-green-700 text-green-100">
-                🤖 LLM Ready
+              {aiAnalysis && (
+                <div className="flex items-center justify-center gap-3 mb-4">
+                  <div className="text-xs text-gray-400" title={aiAnalysis.reasoning || 'AI analysis complete'}>
+                    AI: {aiAnalysis.source.toUpperCase()}
+                  </div>
+                  {aiService.isLLMEnabled() && (
+                    <div className="text-xs text-green-400">
+                      LLM Ready
+                    </div>
+                  )}
+                  {cacheStatus && (
+                    <div className={`text-xs ${cacheStatus === "HIT"
+                      ? "text-emerald-400"
+                      : cacheStatus === "STALE"
+                        ? "text-amber-400"
+                        : "text-rose-400"
+                      }`}
+                    >
+                      Cache: {cacheStatus}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-base font-medium text-gray-200 mb-3 text-center">
+                  Describe your soundscape
+                </label>
+                <div className="flex items-center justify-center gap-2">
+                  <input
+                    className="flex-1 rounded-lg bg-gray-900/50 border border-gray-600 px-4 py-3 text-sm placeholder-gray-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                    placeholder='e.g., "quiet neon city at night with light rain"'
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                  />
+                  <button
+                    onClick={() => runSearch(prompt)}
+                    disabled={loading}
+                    className="px-4 py-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm font-medium transition-colors"
+                  >
+                    {loading ? "Generating…" : "Generate"}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 mt-2 text-center">
+                  Try: <em>quiet neon city night drizzle</em> or <em>rural alley dusk light rain</em>
+                </p>
               </div>
+
+              {error && (
+                <div className="text-red-400 text-sm text-center py-2 px-4 bg-red-900/20 rounded-lg border border-red-800/30">
+                  {error}
+                </div>
+              )}
+            </div>
+
+            {/* Messages Section */}
+            <div className="flex-1 w-full max-w-lg mx-auto">
+              <h3 className="text-sm font-medium text-gray-400 mb-3">Process</h3>
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {messages.length === 0 ? (
+                  <div className="text-xs text-gray-500 italic">
+                    Messages will appear here during generation...
+                  </div>
+                ) : (
+                  messages.map((msg) => (
+                    <div key={msg.id} className="flex items-start gap-2 text-xs">
+                      <div className="w-1 h-1 rounded-full mt-1.5 flex-shrink-0"
+                           style={{
+                             backgroundColor: 
+                               msg.type === 'success' ? '#10b981' :
+                               msg.type === 'error' ? '#ef4444' :
+                               msg.type === 'warning' ? '#f59e0b' :
+                               '#6b7280'
+                           }}
+                      />
+                      <div className={`flex-1 ${
+                        msg.type === 'success' ? 'text-green-400' :
+                        msg.type === 'error' ? 'text-red-400' :
+                        msg.type === 'warning' ? 'text-yellow-400' :
+                        'text-gray-400'
+                      }`}>
+                        {msg.text}
+                      </div>
+                      <div className="text-gray-500 text-xs">
+                        {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Right side: Controls and Sliders */}
+        <div className="w-1/2 p-6 flex flex-col border-l border-gray-800 min-h-screen">
+          <div className="space-y-6">
+            <TransportControls
+              layers={layers}
+              loading={loading}
+              clearing={clearing}
+              mixScale={mixScale}
+              rulesScale={rulesScale}
+              devMode={DEV_MODE}
+              onPlayAll={handlePlayAll}
+              onStopAll={handleStopAll}
+              onClearAll={handleClearAll}
+              onClearCache={handleClearCache}
+              onSeedWhitelist={() => seedWhitelistCache(2)}
+              onNudgeMix={nudgeMix}
+              onApplyGlobalScale={applyGlobalScale}
+            />
+
+            {DEV_MODE && (
+              <p className="text-xs text-yellow-400/70 text-center">
+                Dev mode active - extra controls enabled
+              </p>
+            )}
+
+            <LayerList
+              layers={layers}
+              volumes={volumes}
+              mutes={mutes}
+              isLoading={isLoading}
+              mixScale={mixScale}
+              layerAudioRefs={layerAudioRefs}
+              onVolumeChange={(layerId, value) => setVolumes(prev => ({ ...prev, [layerId]: value }))}
+              onMuteToggle={(layerId) => 
+                setMutes(prev => {
+                  const next = { ...prev, [layerId]: !prev[layerId] };
+                  const a = layerAudioRefs.current[layerId];
+                  if (a) a.muted = next[layerId];
+                  return next;
+                })
+              }
+              onSwap={handleSwap}
+              onDelete={handleDeleteLayer}
+            />
+
+            {layers.length > 0 && (
+              <AddLayer
+                prompt={prompt}
+                loading={loading}
+                onAddLayer={handleAddLayer}
+              />
             )}
           </div>
-        )}
-        
-        {cacheStatus && (
-          <div
-            className={`text-xs px-2 py-1 rounded mx-auto w-fit ${cacheStatus === "HIT"
-              ? "bg-emerald-700 text-emerald-100"
-              : cacheStatus === "STALE"
-                ? "bg-amber-700 text-amber-100"
-                : "bg-rose-700 text-rose-100"
-              }`}
-          >
-            Cache: {cacheStatus}
-          </div>
-        )}
-        <div className="text-sm text-gray-300 text-center">
-          Prompt: <code className="text-gray-200">{prompt}</code>
-        </div>
 
-
-        <div className="w-full mt-2">
-          <div className="flex items-center justify-center gap-2">
-            <input
-              className="flex-1 rounded-md bg-gray-900 border border-gray-700 px-3 py-2 text-sm"
-              placeholder='Describe a vibe… e.g., "quiet neon city at night with light rain"'
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-            />
-            <button
-              onClick={() => runSearch(prompt)}
-              disabled={loading}
-              className="px-3 py-2 rounded-md bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm font-medium"
-            >
-              {loading ? "Generating…" : "Generate"}
-            </button>
-          </div>
-          <p className="text-xs text-gray-500 mt-2">
-            Try: <em>quiet neon city night drizzle</em> or <em>rural alley dusk light rain</em>
-          </p>
-        </div>
-
-        <TransportControls
-          layers={layers}
-          loading={loading}
-          clearing={clearing}
-          mixScale={mixScale}
-          rulesScale={rulesScale}
-          devMode={DEV_MODE}
-          onPlayAll={handlePlayAll}
-          onStopAll={handleStopAll}
-          onClearCache={handleClearCache}
-          onSeedWhitelist={() => seedWhitelistCache(2)}
-          onNudgeMix={nudgeMix}
-          onApplyGlobalScale={applyGlobalScale}
-        />
-
-        {error && <p className="text-red-400 text-sm">{error}</p>}
-
-        <p className="text-xs text-gray-500">
-          {DEV_MODE ? <span className="text-yellow-400">Dev mode active - extra controls enabled.</span> : <span>Add <code>?dev=1</code> for developer tools.</span>}
-        </p>
-
-        <LayerList
-          layers={layers}
-          volumes={volumes}
-          mutes={mutes}
-          isLoading={isLoading}
-          mixScale={mixScale}
-          layerAudioRefs={layerAudioRefs}
-          onVolumeChange={(layerId, value) => setVolumes(prev => ({ ...prev, [layerId]: value }))}
-          onMuteToggle={(layerId) => 
-            setMutes(prev => {
-              const next = { ...prev, [layerId]: !prev[layerId] };
-              const a = layerAudioRefs.current[layerId];
-              if (a) a.muted = next[layerId];
-              return next;
-            })
-          }
-          onSwap={handleSwap}
-          onDelete={handleDeleteLayer}
-        />
-
-        {layers.length > 0 && (
-          <AddLayer
-            prompt={prompt}
-            loading={loading}
-            onAddLayer={handleAddLayer}
-          />
-        )}
-
-        <div className="sr-only">
-          {layers.map((L) => {
-            return (
-              <audio
-                key={L.id}
-                ref={(el) => { layerAudioRefs.current[L.id] = el; }}
-                crossOrigin="anonymous"
-                preload="auto"
-                onCanPlayThrough={() => {
-                  swappingRef.current.delete(L.id);
-                  setIsLoading(prev => ({ ...prev, [L.id]: false }));
-                }}
-                onError={(e) => {
-                  const el = e.currentTarget as HTMLAudioElement;
-                  const code = el.error?.code ?? 0;
-                  if (swappingRef.current.has(L.id) && code === 1) {
+          {/* Hidden audio elements */}
+          <div className="sr-only">
+            {layers.map((L) => {
+              return (
+                <audio
+                  key={L.id}
+                  ref={(el) => { layerAudioRefs.current[L.id] = el; }}
+                  crossOrigin="anonymous"
+                  preload="auto"
+                  onCanPlayThrough={() => {
                     swappingRef.current.delete(L.id);
-                    return;
-                  }
-                  console.warn("Audio error", L.id, { code, src: el.currentSrc || el.src });
-                  setIsLoading(prev => ({ ...prev, [L.id]: false }));
-                }}
-              />
-            );
-          })}
-        </div>
-
-            </div>
+                    setIsLoading(prev => ({ ...prev, [L.id]: false }));
+                  }}
+                  onError={(e) => {
+                    const el = e.currentTarget as HTMLAudioElement;
+                    const code = el.error?.code ?? 0;
+                    if (swappingRef.current.has(L.id) && code === 1) {
+                      swappingRef.current.delete(L.id);
+                      return;
+                    }
+                    addMessage('warning', `Audio playback error for "${L.tag}"`);
+                    setIsLoading(prev => ({ ...prev, [L.id]: false }));
+                  }}
+                />
+              );
+            })}
           </div>
         </div>
-
-        <div className="w-1/2 p-6 flex items-center justify-center border-l border-gray-800 min-h-screen">
-          <div className="text-center text-gray-500">
-            <div className="text-6xl mb-4">🎨</div>
-            <h2 className="text-xl font-semibold mb-2">Image Generation</h2>
-            <p className="text-sm">Coming soon...</p>
-          </div>
-        </div>
-
       </div>
     </main>
   );
