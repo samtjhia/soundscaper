@@ -13,6 +13,9 @@ export default function App() {
 
   const layerAudioRefs = React.useRef<Record<string, HTMLAudioElement | null>>({});
   const [volumes, setVolumes] = useState<Record<string, number>>({});
+  const [mutes, setMutes] = useState<Record<string, boolean>>({});
+  const [isLoading, setIsLoading] = useState<Record<string, boolean>>({});
+
 
   function selectPreviewUrl(item?: FSItem | null): string | null {
     if (!item?.previews) return null;
@@ -93,11 +96,29 @@ export default function App() {
   }, [layers]);
 
   useEffect(() => {
+    if (!layers.length) return;
+
+    setMutes(prev => {
+      const next = { ...prev };
+      for (const L of layers) if (next[L.id] == null) next[L.id] = false;
+      return next;
+    });
+
+    setIsLoading(prev => {
+      const next = { ...prev };
+      for (const L of layers) next[L.id] = true;
+      return next;
+    });
+  }, [layers]);
+
+  useEffect(() => {
     for (const L of layers) {
       const a = layerAudioRefs.current[L.id];
-      if (a) a.volume = volumes[L.id] ?? L.gain;
+      if (!a) continue;
+      a.volume = volumes[L.id] ?? L.gain;
+      a.muted = !!mutes[L.id];
     }
-  }, [layers, volumes]);
+  }, [layers, volumes, mutes]);
 
 
   useEffect(() => {
@@ -188,11 +209,35 @@ export default function App() {
               return (
                 <div key={L.id} className="rounded-xl bg-white/5 p-3">
                   <div className="flex items-center justify-between">
-                    <div className="text-sm font-semibold text-gray-100">
+                    <div className="text-sm font-semibold text-gray-100 flex items-center gap-2">
                       {L.tag}
+                      {isLoading[L.id] && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-gray-300">
+                          loading…
+                        </span>
+                      )}
                     </div>
-                    <div className="text-xs text-gray-300 tabular-nums w-16 text-right">
-                      {(v * 100).toFixed(0)}%
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() =>
+                          setMutes(prev => {
+                            const next = { ...prev, [L.id]: !prev[L.id] };
+                            const a = layerAudioRefs.current[L.id];
+                            if (a) a.muted = next[L.id];
+                            return next;
+                          })
+                        }
+                        className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/15"
+                        aria-pressed={mutes[L.id] ? "true" : "false"}
+                        title={mutes[L.id] ? "Unmute" : "Mute"}
+                      >
+                        {mutes[L.id] ? "Unmute" : "Mute"}
+                      </button>
+
+                      <div className="text-xs text-gray-300 tabular-nums w-16 text-right">
+                        {(v * 100).toFixed(0)}%
+                      </div>
                     </div>
                   </div>
                   <input
@@ -207,7 +252,8 @@ export default function App() {
                       const a = layerAudioRefs.current[L.id];
                       if (a) a.volume = nv;
                     }}
-                    className="w-full mt-2 accent-emerald-400"
+                    disabled={!!isLoading[L.id]}
+                    className="w-full mt-2 accent-emerald-400 disabled:opacity-50"
                     aria-label={`${L.tag} volume`}
                   />
                   <div className="mt-2 text-xs text-gray-300">
@@ -247,15 +293,21 @@ export default function App() {
             return (
               <audio
                 key={L.id}
-                ref={(el: HTMLAudioElement | null) => {
-                  layerAudioRefs.current[L.id] = el;
-                }}
+                ref={(el) => { layerAudioRefs.current[L.id] = el; }}
                 src={src}
                 preload="auto"
+                onCanPlayThrough={() =>
+                  setIsLoading(prev => ({ ...prev, [L.id]: false }))
+                }
+                onError={(e) => {
+                  console.warn("Audio error", L.id, e);
+                  setIsLoading(prev => ({ ...prev, [L.id]: false }));
+                }}
               />
             );
           })}
         </div>
+
       </div>
     </main>
   );
