@@ -13,6 +13,11 @@ export interface AIAnalysisResult {
   llmSuggestions?: LLMAnalysisResult;
 }
 
+export interface ImageGenerationResult {
+  url: string;
+  revisedPrompt?: string;
+}
+
 class AIService {
   private llmService: LLMService | null = null;
   private availableTags = [
@@ -164,6 +169,39 @@ class AIService {
 
   getAvailableTags(): string[] {
     return [...this.availableTags];
+  }
+
+  async generateImage(userPrompt: string): Promise<ImageGenerationResult> {
+    if (!this.llmService) {
+      throw new Error('LLM service not available for image generation');
+    }
+
+    try {
+      // Enhance the prompt for visual generation
+      const enhancedPrompt = this.enhancePromptForVisuals(userPrompt);
+      
+      const result = await this.llmService.generateImage(enhancedPrompt);
+      return result;
+    } catch (error) {
+      console.error('[AI] Image generation failed:', error);
+      throw new Error(`Image generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private enhancePromptForVisuals(audioPrompt: string): string {
+    // Transform audio-focused prompts into visual-focused ones
+    const visualEnhancements = [
+      'cinematic photography',
+      'atmospheric',
+      'moody lighting',
+      'professional composition',
+      'detailed environment'
+    ];
+
+    // Add visual context to the original prompt
+    const enhanced = `${audioPrompt}, ${visualEnhancements.join(', ')}, high quality, artistic`;
+    
+    return enhanced;
   }
 }
 
