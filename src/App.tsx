@@ -26,6 +26,9 @@ export default function App() {
   const alternatesRef = React.useRef<Record<string, FSItem[]>>({});
   const altIndexRef = React.useRef<Record<string, number>>({});
 
+  const swappingRef = React.useRef<Set<string>>(new Set());
+
+
 
   async function handleClearCache() {
     try {
@@ -234,12 +237,13 @@ export default function App() {
 
           const base = gainForTag(tag);
           const layer: Layer = {
-            id: `${tag}-${item.id}`,
+            id: tag,
             tag,
             item,
             gain: base,
             link: `https://freesound.org/s/${item.id}/`,
           };
+
 
           return layer;
         })
@@ -322,6 +326,37 @@ export default function App() {
     }
   }, [layers, volumes, mutes]);
 
+  useEffect(() => {
+    for (const L of layers) {
+      const a = layerAudioRefs.current[L.id];
+      if (!a || !L.item) continue;
+      
+      const rawSrc = selectPreviewUrl(L.item);
+      if (!rawSrc) {
+        console.warn(`[init] No preview URL for layer ${L.id}`);
+        setIsLoading(prev => ({ ...prev, [L.id]: false }));
+        continue;
+      }
+
+      const src = `${rawSrc}${rawSrc.includes("?") ? "&" : "?"}v=${L.item.id}`;
+      
+      if (a.src !== src) {
+        console.log(`[init] Setting audio source for ${L.id}: ${src}`);
+        
+        a.src = src;
+        a.loop = true;
+        a.volume = effectiveGain(L.id, L.gain);
+        a.muted = !!mutes[L.id];
+        
+        try {
+          a.load();
+        } catch (e) {
+          console.warn(`[init] Failed to load audio for ${L.id}`, e);
+          setIsLoading(prev => ({ ...prev, [L.id]: false }));
+        }
+      }
+    }
+  }, [layers, mutes, mixScale]);
 
   useEffect(() => {
     return () => {
@@ -341,6 +376,11 @@ export default function App() {
       const a = layerAudioRefs.current[L.id];
       if (!a) continue;
 
+      if (!a.src) {
+        console.warn(`[play] No src set for ${L.id}, skipping play`);
+        continue;
+      }
+
       a.volume = effectiveGain(L.id, L.gain);
 
       if (mutes && typeof mutes[L.id] === "boolean") {
@@ -351,7 +391,18 @@ export default function App() {
       a.currentTime = 0;
 
       a.play().catch(err => {
-        console.warn("play failed", L.id, err);
+        if (a.readyState < 2) {
+          console.log(`[play] Audio not ready for ${L.id}, readyState: ${a.readyState}, waiting...`);
+          const onReady = () => {
+            a.currentTime = 0;
+            a.play().catch(err => {
+              console.warn("delayed play failed", L.id, err);
+            });
+          };
+          a.addEventListener('canplay', onReady, { once: true });
+        } else {
+          console.warn("play failed", L.id, err);
+        }
       });
     }
   };
@@ -382,7 +433,6 @@ export default function App() {
     const tag = L.tag;
 
     let list = alternatesRef.current[tag] ?? [];
-
     if (list.length === 0) {
       const wid = pickWhitelist(tag);
       if (wid != null) {
@@ -412,6 +462,11 @@ export default function App() {
     const nextItem = list[idx];
     altIndexRef.current[tag] = (idx + 1) % list.length;
 
+    if (!hasUsablePreview(nextItem)) {
+      console.warn(`[swap] next item ${nextItem.id} has no usable preview`);
+      return;
+    }
+
     setLayers(prev =>
       prev.map(x =>
         x.id === L.id
@@ -420,26 +475,89 @@ export default function App() {
       )
     );
 
-    const a = layerAudioRefs.current[L.id];
-    const nextSrc = selectPreviewUrl(nextItem);
-    if (!a || !nextSrc) return;
+    return new Promise<void>((resolve) => {
+      requestAnimationFrame(async () => {
+        const a = layerAudioRefs.current[L.id];
+        const rawSrc = selectPreviewUrl(nextItem);
+        
+        if (!a || !rawSrc) {
+          setIsLoading(prev => ({ ...prev, [L.id]: false }));
+          resolve();
+          return;
+        }
 
-    const wasPlaying = !a.paused;
-    const targetVol = effectiveGain(L.id, L.gain);
+        const nextSrc = `${rawSrc}${rawSrc.includes("?") ? "&" : "?"}v=${nextItem.id}`;
 
-    try { a.pause(); } catch { }
-    a.src = nextSrc;
-    try { a.load(); } catch { }
+        setIsLoading(prev => ({ ...prev, [L.id]: true }));
+        swappingRef.current.add(L.id);
 
-    a.loop = true;
-    a.volume = targetVol;
-    a.muted = !!mutes[L.id];
+        const wasPlaying = !a.paused;
+        const targetVol = effectiveGain(L.id, L.gain);
 
-    if (wasPlaying) {
-      a.currentTime = 0;
-      a.play().catch(err => console.warn("swap play failed", L.id, err));
-    }
+        try {
+          a.pause();
+          a.currentTime = 0;
+        } catch (e) {
+          console.warn(`[swap] pause/reset failed for ${L.id}`, e);
+        }
+
+        try {
+          a.removeAttribute("src");
+          a.load();
+          
+          await new Promise(resolve => setTimeout(resolve, 10));
+        } catch (e) {
+          console.warn(`[swap] source clearing failed for ${L.id}`, e);
+        }
+
+        a.src = nextSrc;
+        a.loop = true;
+        a.volume = targetVol;
+        a.muted = !!mutes[L.id];
+
+        const onLoadSuccess = () => {
+          console.log(`[swap] successfully loaded ${L.id} -> ${nextItem.id}`);
+          if (wasPlaying) {
+            a.currentTime = 0;
+            a.play().catch(err => {
+              console.warn("swap play failed", L.id, err);
+              setIsLoading(prev => ({ ...prev, [L.id]: false }));
+              swappingRef.current.delete(L.id);
+            });
+          } else {
+            setIsLoading(prev => ({ ...prev, [L.id]: false }));
+            swappingRef.current.delete(L.id);
+          }
+          resolve();
+        };
+
+        const onLoadError = (e: Event) => {
+          console.error(`[swap] failed to load ${L.id} -> ${nextItem.id}`, e);
+          setIsLoading(prev => ({ ...prev, [L.id]: false }));
+          swappingRef.current.delete(L.id);
+          resolve();
+        };
+
+        a.addEventListener('canplaythrough', onLoadSuccess, { once: true });
+        a.addEventListener('error', onLoadError, { once: true });
+
+        try {
+          a.load();
+        } catch (e) {
+          console.warn(`[swap] load() failed for ${L.id}`, e);
+          onLoadError(e as Event);
+        }
+
+        setTimeout(() => {
+          if (swappingRef.current.has(L.id)) {
+            console.warn(`[swap] timeout for ${L.id}`);
+            onLoadError(new Event('timeout'));
+          }
+        }, 10000);
+      });
+    });
   }
+
 
 
 
@@ -657,18 +775,24 @@ export default function App() {
 
         <div className="sr-only">
           {layers.map((L) => {
-            const src = selectPreviewUrl(L.item) ?? undefined;
             return (
               <audio
                 key={L.id}
                 ref={(el) => { layerAudioRefs.current[L.id] = el; }}
-                src={src}
+                crossOrigin="anonymous"
                 preload="auto"
-                onCanPlayThrough={() =>
-                  setIsLoading(prev => ({ ...prev, [L.id]: false }))
-                }
+                onCanPlayThrough={() => {
+                  swappingRef.current.delete(L.id);
+                  setIsLoading(prev => ({ ...prev, [L.id]: false }));
+                }}
                 onError={(e) => {
-                  console.warn("Audio error", L.id, e);
+                  const el = e.currentTarget as HTMLAudioElement;
+                  const code = el.error?.code ?? 0;
+                  if (swappingRef.current.has(L.id) && code === 1) {
+                    swappingRef.current.delete(L.id);
+                    return;
+                  }
+                  console.warn("Audio error", L.id, { code, src: el.currentSrc || el.src });
                   setIsLoading(prev => ({ ...prev, [L.id]: false }));
                 }}
               />
