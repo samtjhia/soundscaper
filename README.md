@@ -1,6 +1,6 @@
 # Soundscaper
 
-**Create immersive soundscapes with AI-powered audio and visual generation**
+**Transport yourself anywhere with AI-layered soundscapes.**
 
 ## Why I Built This
 
