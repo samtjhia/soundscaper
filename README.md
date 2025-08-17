@@ -10,7 +10,7 @@ This tool tackles that challenge by letting you immerse yourself with your sense
 
 Soundscaper is a web application that transforms text descriptions into multi-layered audio experiences paired with AI-generated visuals. Describe a scene and it generates appropriate sounds and imagery.
 
-![Soundscaper Preview](public/soundscaper-icon.svg)
+https://github.com/user-attachments/assets/63655245-2d24-4398-99b2-5886fbe9b24f
 
 ## Features
 
