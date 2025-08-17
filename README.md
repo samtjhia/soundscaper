@@ -60,6 +60,9 @@ https://github.com/user-attachments/assets/63655245-2d24-4398-99b2-5886fbe9b24f
 
 3. **Set up environment variables**
    Create a `.env` file in the root directory:
+   ```bash
+    cp .env.example .env.local
+   ```
    ```env
    VITE_OPENAI_API_KEY=your_openai_api_key_here
    VITE_FREESOUND_TOKEN=your_freesound_token_here
@@ -67,12 +70,12 @@ https://github.com/user-attachments/assets/63655245-2d24-4398-99b2-5886fbe9b24f
 
    **Note**: Both API keys are required for full functionality. The Freesound API key provides access to the library of community-contributed sounds necessary for creating diverse soundscapes.
 
-4. **Start the development server**
+5. **Start the development server**
    ```bash
    npm run dev
    ```
 
-5. **Open your browser**
+6. **Open your browser**
    Navigate to `http://localhost:5173` to start creating soundscapes!
 
 ## Built With
