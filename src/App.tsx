@@ -5,6 +5,18 @@ import type { FSItem, Layer } from "./types";
 import { gainForTag } from "./ai/rules";
 import { aiService } from "./ai/ai-service";
 import { getCache, setCache, clearOldCache, clearOldVersions, clearAllCache } from "./cache/idb";
+
+// Helper to get cached audio as Blob URL
+async function getCachedAudioUrl(layer: Layer): Promise<string | null> {
+  if (!layer.item) return null;
+  const key = `${FETCH_VERSION}:audio|${layer.item.id}`;
+  const cached = await getCache<ArrayBuffer>(key);
+  if (cached?.data) {
+    const blob = new Blob([cached.data], { type: "audio/mpeg" });
+    return URL.createObjectURL(blob);
+  }
+  return null;
+}
 import { allWhitelist, pickWhitelist, WL_CACHE_PREFIX } from "./freesound/whitelist";
 import { useLayers } from './hooks/use-layers';
 import { useAudio } from './hooks/use-audio';
@@ -578,27 +590,28 @@ export default function App() {
   }, [layers, volumes, mutes]);
 
   useEffect(() => {
-    for (const L of layers) {
+    layers.forEach(async (L) => {
       const a = layerAudioRefs.current[L.id];
-      if (!a || !L.item) continue;
-      
-      const rawSrc = selectPreviewUrl(L.item);
-      if (!rawSrc) {
-        console.warn(`[init] No preview URL for layer ${L.id}`);
-        setIsLoading(prev => ({ ...prev, [L.id]: false }));
-        continue;
+      if (!a || !L.item) return;
+
+      let src: string | null = null;
+      src = await getCachedAudioUrl(L);
+      if (!src) {
+        const rawSrc = selectPreviewUrl(L.item);
+        if (!rawSrc) {
+          console.warn(`[init] No preview URL for layer ${L.id}`);
+          setIsLoading(prev => ({ ...prev, [L.id]: false }));
+          return;
+        }
+        src = `${rawSrc}${rawSrc.includes("?") ? "&" : "?"}v=${L.item.id}`;
       }
 
-      const src = `${rawSrc}${rawSrc.includes("?") ? "&" : "?"}v=${L.item.id}`;
-      
       if (a.src !== src) {
         console.log(`[init] Setting audio source for ${L.id}: ${src}`);
-        
         a.src = src;
         a.loop = true;
         a.volume = effectiveGain(L.id, L.gain);
         a.muted = !!mutes[L.id];
-        
         try {
           a.load();
         } catch (e) {
@@ -606,7 +619,7 @@ export default function App() {
           setIsLoading(prev => ({ ...prev, [L.id]: false }));
         }
       }
-    }
+    });
   }, [layers, mutes, mixScale]);
 
   useEffect(() => {
