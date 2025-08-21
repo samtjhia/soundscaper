@@ -1,43 +1,41 @@
 # Soundscaper
 
-**Create immersive soundscapes with AI-powered audio and visual generation**
+**Transport yourself anywhere with AI-layered soundscapes.**
 
 ## Why I Built This
 
-I created Soundscaper because I noticed I get easily distracted when studying or reading in quiet environments. I realized that when I was in different places - like a coffee shop, library, or outdoors - I could concentrate much better and felt more relaxed and focused. The ambient sounds of these environments seemed to help my mind settle into a productive state.
+Silence wrecks my focus. Coffee shops, libraries, or even just being outside help me concentrate because of the background noise. I wanted a way to bring that feeling anywhere, on demand — not just looping rain sounds.  
 
-This tool tackles that challenge by letting you immerse yourself with your senses into any environment you can imagine. Unlike other ambient sound apps that give you a few preset options, Soundscaper gives you complete control over your sound environment - you can describe any scene and have AI curate the perfect soundscape for your needs.
+Soundscaper is my attempt at that. You type a scene like *“cozy cabin in a thunderstorm”* or *“patio at sunrise,”* and the app builds it out with the sounds that actually matter — thunder rolling outside, wood creaking, birds chirping. It layers everything together so if you close your eyes, you feel like you’re there. On top of that, it generates artwork to match the vibe.  
 
-Soundscaper is a web application that transforms text descriptions into multi-layered audio experiences paired with AI-generated visuals. Describe a scene and it generates appropriate sounds and imagery.
+Unlike looping youtube audios, with Soundscaper you’re in control: add or swap tracks, tweak volumes, and shape the environment to your taste.  
 
-![Soundscaper Preview](public/soundscaper-icon.svg)
+## What It Does  
 
-## Features
+- Takes a text prompt and turns it into a layered soundscape  
+- Finds matching sounds from [Freesound](https://freesound.org) with the help of GPT  
+- Generates artwork with DALL·E 3 to complete the atmosphere  
+- Lets you mix, balance, and swap tracks live in the browser  
+- Caches audio locally so you’re not hammering APIs on every run
 
-### Intelligent Audio Generation
-- **AI-Powered Sound Selection**: Uses OpenAI's GPT models to select appropriate sounds for any scene
-- **Multi-Layer Audio**: Creates soundscapes by layering multiple audio sources
-- **Freesound Integration**: Access to thousands of royalty-free sounds from Freesound.org
-- **Smart Caching**: Audio files are cached locally to reduce API calls and improve performance
-- **Smart Fallback System**: Includes a minimal whitelist for testing purposes when Freesound API is unavailable
-- **Audio Management**: Automatic volume balancing and audio mixing
+For more information check out the [devpost](https://devpost.com/software/soundscaper-89o5eh)
 
-### AI Visual Generation
-- **DALL-E 3 Integration**: Generates landscape-format artwork that matches your audio scene
-- **Fullscreen Viewer**: Fullscreen image viewing with smooth transitions
-- **Cost-Optimized**: Uses landscape format (1792x1024) for better value
+https://github.com/user-attachments/assets/63655245-2d24-4398-99b2-5886fbe9b24f
 
-### Professional Controls
-- **Transport Controls**: Play All, Stop All, and Clear All with color coding
-- **Layer Management**: Individual control over each audio layer with volume adjustment
-- **Swap Functionality**: Replace individual sounds while maintaining the overall composition
-- **Real-time Feedback**: Visual feedback during operations and loading states
+## Features  
 
-### User Experience
-- **Design**: Color palette using teal, purple, blue, and orange accents
-- **Animations**: Fade-in effects and transitions throughout the interface
-- **Layout**: Two-column layout optimized for desktop use
-- **Typography**: Clean typography with proper spacing
+- **AI-guided sound selection** – GPT picks sounds that fit the vibe like the defining sounds of the environment  
+  - Uses Freesound’s community data (loopability, ratings, length) to score sounds  
+  - Searches with curated tags while blocking “bad fit” ones (like music remixes or noisy uploads)  
+
+- **Multi-layer mixing** – combine and balance multiple tracks at once  
+  - On generation, audio levels are set automatically based on the scene’s context (e.g., background ambience vs. foreground effects)  
+
+- **Smart caching + fallbacks** – IndexedDB caching and a small whitelist keep it running even when APIs fail  
+
+- **Visual generation** – each soundscape comes with matching artwork from DALL·E 3  
+
+- **Interactive controls** – add/remove layers, adjust gain, swap sounds, or clear everything in one click  
 
 ## Getting Started
 
@@ -62,35 +60,23 @@ Soundscaper is a web application that transforms text descriptions into multi-la
 
 3. **Set up environment variables**
    Create a `.env` file in the root directory:
+   ```bash
+    cp .env.example .env.local
+   ```
    ```env
    VITE_OPENAI_API_KEY=your_openai_api_key_here
-   VITE_FREESOUND_API_KEY=your_freesound_api_key_here
+   VITE_FREESOUND_TOKEN=your_freesound_token_here
    ```
 
    **Note**: Both API keys are required for full functionality. The Freesound API key provides access to the library of community-contributed sounds necessary for creating diverse soundscapes.
 
-4. **Start the development server**
+5. **Start the development server**
    ```bash
    npm run dev
    ```
 
-5. **Open your browser**
+6. **Open your browser**
    Navigate to `http://localhost:5173` to start creating soundscapes!
-
-### API Keys and Limitations
-
-**OpenAI API Key** (Required):
-- Used for intelligent sound selection via GPT models and image generation via DALL-E 3
-- Without this key, the application cannot generate soundscapes or images
-
-**Freesound API Key** (Required):
-- Provides access to the full Freesound.org library of community sounds
-- **Rate Limits**: Free tier allows limited requests per day
-- **Caching System**: Audio files are automatically cached locally using IndexedDB to minimize API usage and improve performance
-- **Fallback System**: A minimal whitelist exists for testing purposes, but the Freesound API is essential for creating quality soundscapes
-- **Get Your Key**: Obtain a free Freesound API key at [freesound.org/apiv2/apply](https://freesound.org/apiv2/apply)
-
-**Graceful Degradation**: Soundscaper includes a minimal fallback system for testing, but both API keys are required for the intended user experience.
 
 ## Built With
 
@@ -184,19 +170,22 @@ soundscaper/
 - `npm run build` - Build production bundle with TypeScript compilation
 - `npm run preview` - Preview production build locally
 
+### API Keys and Limitations
+
+**[OpenAI API Key](https://platform.openai.com/api-keys)** (Pay Yourself):
+- Used for intelligent sound selection via GPT models and image generation via DALL-E 3
+- Without this key, the application cannot generate soundscapes or images
+
+**[Freesound API Key](https://freesound.org/apiv2/apply)** (Free - 2000 cap per day):
+- Provides access to the full Freesound.org library of community sounds
+- **Rate Limits**: Free tier allows limited requests per day
+- **Caching System**: Audio files are automatically cached locally using IndexedDB to minimize API usage and improve performance
+- **Fallback System**: A minimal whitelist exists for testing purposes, but the Freesound API is essential for creating quality soundscapes
+
+**Graceful Degradation**: Soundscaper includes a minimal fallback system for testing, but both API keys are required for the intended user experience.
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- **Freesound.org** community for providing audio samples and free API access
-- **OpenAI** for AI capabilities through GPT and DALL-E 3
-- **React and Vite** for development tools
-- **Tailwind CSS** for CSS framework
-
-**Getting API Keys**:
-- [OpenAI API Key](https://platform.openai.com/api-keys) - Required for core functionality
-- [Freesound API Key](https://freesound.org/apiv2/apply) - Required for quality sound library access
 
 *Transform your imagination into immersive audio-visual experiences with Soundscaper.*
